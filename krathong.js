@@ -1,0 +1,446 @@
+// Krathong model, links, SVG drawing and the hand-drawn krathong codec.
+// Shared by the river (river.js) and the maker (builder.js).
+(() => {
+  'use strict';
+
+  // ---------- options for "Create your krathong" ----------
+  const BASES = {
+    banana:  { label: 'Banana trunk', emoji: '🍌' },
+    bread:   { label: 'Bread',        emoji: '🍞' },
+    coconut: { label: 'Coconut',      emoji: '🥥' },
+    lotus:   { label: 'Lotus',        emoji: '🪷' }
+  };
+  const LEAVES = {
+    pointed: { label: 'Folded points', emoji: '🔺' },
+    round:   { label: 'Petals',        emoji: '🌸' },
+    layered: { label: 'Two layers',    emoji: '👑' }
+  };
+  const LEAF_COLORS = {
+    green: { label: 'Banana green', a: '#86c96f', b: '#3d8f3f', line: '#245e28' },
+    lime:  { label: 'Young leaf',   a: '#d2eb98', b: '#86b84a', line: '#4f7a24' },
+    gold:  { label: 'Gold',         a: '#ffe48f', b: '#d9a537', line: '#8f6214' },
+    pink:  { label: 'Pink',         a: '#ffc9dd', b: '#ec80aa', line: '#a9416a' },
+    white: { label: 'White',        a: '#ffffff', b: '#d5dde8', line: '#8d9aab' }
+  };
+  const FLOWERS = {
+    marigold: { label: 'Marigold', emoji: '🌼' },
+    rose:     { label: 'Rose',     emoji: '🌹' },
+    orchid:   { label: 'Orchid',   emoji: '💜' },
+    jasmine:  { label: 'Jasmine',  emoji: '🤍' }
+  };
+  const CENTERS = {
+    lotus:   { label: 'Lotus bud',    emoji: '🪷' },
+    cone:    { label: 'Flower cone',  emoji: '🔼' },
+    bouquet: { label: 'Big marigold', emoji: '🌼' },
+    none:    { label: 'Nothing',      emoji: '⭕' }
+  };
+  const CANDLES = {
+    white: { label: 'White', c: '#fbf6ea' },
+    gold:  { label: 'Gold',  c: '#ffd25e' },
+    pink:  { label: 'Pink',  c: '#ff9cc2' },
+    red:   { label: 'Red',   c: '#e8484f' },
+    blue:  { label: 'Blue',  c: '#7cc4ff' }
+  };
+  const MODES = { create: 1, draw: 1 };
+
+  // ---------- the drawing pad ----------
+  // Drawings live on an 800×600 pad. The view of a krathong is 400×300; the water line is at WL.
+  const PAD_W = 800, PAD_H = 600, VIEW_W = 400, VIEW_H = 300, WL = 252;
+  const INKS = ['#ffffff', '#1d1a24', '#7a4a26', '#245e28', '#3d9a45', '#a6dc6a', '#ffe14d', '#ff9b1f',
+    '#e8384b', '#ff8fbd', '#d24bd6', '#8c5cf0', '#3c7bf0', '#7fdcff', '#d4a537', '#f6e7c8'];
+  const ERASER = 31;
+  const WIDTHS = [5, 10, 20, 38];
+
+  const DEFAULTS = {
+    mode: 'create', name: '', from: '', msg: '',
+    base: 'banana', leaf: 'pointed', leafc: 'green', flowers: ['marigold', 'rose', 'jasmine'],
+    center: 'lotus', candle: 'gold', incense: 3,
+    strokes: [], drawId: '', flames: []
+  };
+  const MAX_NAME = 30, MAX_MSG = 80, MAX_FLAMES = 3;
+  const has = (t, k) => typeof k === 'string' && Object.prototype.hasOwnProperty.call(t, k);
+  const pick = (v, t, d) => has(t, v) ? v : d;
+  const clean = (s, n) => String(s == null ? '' : s).replace(/\s+/g, ' ').slice(0, n);
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+  function cleanStrokes(list) {
+    if (!Array.isArray(list)) return [];
+    const out = [];
+    for (const s of list.slice(0, 400)) {
+      if (!s || !Array.isArray(s.p)) continue;
+      const ink = s.i === ERASER ? ERASER : clamp(s.i | 0, 0, INKS.length - 1);
+      const p = [];
+      for (let k = 0; k + 1 < s.p.length && p.length < 8000; k += 2) p.push(clamp(Math.round(+s.p[k] || 0), 0, PAD_W - 1), clamp(Math.round(+s.p[k + 1] || 0), 0, PAD_H - 1));
+      if (p.length) out.push({ i: ink, w: clamp(s.w | 0, 0, WIDTHS.length - 1), p });
+    }
+    return out;
+  }
+  function cleanFlames(list) {
+    if (!Array.isArray(list)) return [];
+    return list.slice(0, MAX_FLAMES).filter(f => Array.isArray(f) && f.length === 2 && isFinite(f[0]) && isFinite(f[1]))
+      .map(f => [clamp(Math.round(f[0]), 0, VIEW_W), clamp(Math.round(f[1]), 0, VIEW_H)]);
+  }
+
+  function normalize(o) {
+    o = o && typeof o === 'object' ? o : {};
+    const d = DEFAULTS, inc = parseInt(o.incense, 10);
+    const flowers = Array.isArray(o.flowers) ? o.flowers.filter(f => has(FLOWERS, f)) : d.flowers;
+    return {
+      mode: pick(o.mode, MODES, d.mode),
+      name: clean(o.name, MAX_NAME).trim(),
+      from: clean(o.from, MAX_NAME).trim(),
+      msg: clean(o.msg, MAX_MSG),
+      base: pick(o.base, BASES, d.base),
+      leaf: pick(o.leaf, LEAVES, d.leaf),
+      leafc: pick(o.leafc, LEAF_COLORS, d.leafc),
+      flowers: [...new Set(flowers)],
+      center: pick(o.center, CENTERS, d.center),
+      candle: pick(o.candle, CANDLES, d.candle),
+      incense: inc >= 0 && inc <= 3 ? inc : d.incense,
+      strokes: cleanStrokes(o.strokes),
+      drawId: typeof o.drawId === 'string' && /^[A-Za-z0-9_-]{20,40}\.png$/.test(o.drawId) ? o.drawId : '',
+      flames: cleanFlames(o.flames)
+    };
+  }
+  const defaults = () => normalize(DEFAULTS);
+
+  // ---------- drawing codec: strokes <-> a short base64url text ----------
+  // Each stroke: ink (5 bits), width (2), point count (13), then x (10) and y (10) per point.
+  function encodeStrokes(strokes) {
+    const bytes = [];
+    let acc = 0, bits = 0;
+    const put = (v, n) => {
+      for (let k = n - 1; k >= 0; k--) {
+        acc = (acc << 1) | ((v >> k) & 1); bits++;
+        if (bits === 8) { bytes.push(acc); acc = 0; bits = 0; }
+      }
+    };
+    put(1, 4);                                  // format version
+    for (const s of strokes) {
+      const n = Math.min(8191, s.p.length / 2);
+      put(s.i, 5); put(s.w, 2); put(n, 13);
+      for (let k = 0; k < n; k++) { put(s.p[2 * k], 10); put(s.p[2 * k + 1], 10); }
+    }
+    if (bits) put(0, 8 - bits);
+    let bin = '';
+    for (let k = 0; k < bytes.length; k += 4096) bin += String.fromCharCode.apply(null, bytes.slice(k, k + 4096));
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
+  function decodeStrokes(text) {
+    try {
+      const b = text.replace(/-/g, '+').replace(/_/g, '/');
+      const bin = atob(b + '='.repeat((4 - b.length % 4) % 4));
+      let pos = 0;
+      const total = bin.length * 8;
+      const get = n => {
+        let v = 0;
+        for (let k = 0; k < n; k++) { const byte = bin.charCodeAt(pos >> 3); v = (v << 1) | ((byte >> (7 - (pos & 7))) & 1); pos++; }
+        return v;
+      };
+      if (get(4) !== 1) return [];
+      const out = [];
+      while (total - pos >= 20) {
+        const i = get(5), w = get(2), n = get(13);
+        if (!n || total - pos < n * 20) break;
+        const p = [];
+        for (let k = 0; k < n; k++) p.push(get(10), get(10));
+        out.push({ i, w, p });
+      }
+      return cleanStrokes(out);
+    } catch (e) { return []; }
+  }
+
+  // Keep strokes small: drop points that sit on a nearly straight line (Ramer–Douglas–Peucker).
+  function simplify(p, eps) {
+    const n = p.length / 2;
+    if (n <= 2) return p.slice();
+    const keep = new Uint8Array(n); keep[0] = keep[n - 1] = 1;
+    const stack = [[0, n - 1]];
+    while (stack.length) {
+      const [a, b] = stack.pop();
+      const ax = p[2 * a], ay = p[2 * a + 1], bx = p[2 * b], by = p[2 * b + 1];
+      const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
+      let best = -1, far = 0;
+      for (let k = a + 1; k < b; k++) {
+        const d = Math.abs(dy * p[2 * k] - dx * p[2 * k + 1] + bx * ay - by * ax) / len;
+        if (d > far) { far = d; best = k; }
+      }
+      if (far > eps && best > 0) { keep[best] = 1; stack.push([a, best], [best, b]); }
+    }
+    const out = [];
+    for (let k = 0; k < n; k++) if (keep[k]) out.push(p[2 * k], p[2 * k + 1]);
+    return out;
+  }
+
+  // Paint strokes onto a 2D context sized PAD_W×PAD_H (or scaled).
+  function paintStroke(g, s) {
+    const p = s.p;
+    g.save();
+    g.globalCompositeOperation = s.i === ERASER ? 'destination-out' : 'source-over';
+    g.strokeStyle = g.fillStyle = s.i === ERASER ? '#000' : INKS[s.i];
+    g.lineWidth = WIDTHS[s.w]; g.lineCap = 'round'; g.lineJoin = 'round';
+    if (p.length <= 2) {
+      g.beginPath(); g.arc(p[0], p[1], WIDTHS[s.w] / 2, 0, Math.PI * 2); g.fill();
+    } else {
+      g.beginPath(); g.moveTo(p[0], p[1]);
+      for (let k = 2; k < p.length - 2; k += 2) {
+        const mx = (p[k] + p[k + 2]) / 2, my = (p[k + 1] + p[k + 3]) / 2;
+        g.quadraticCurveTo(p[k], p[k + 1], mx, my);
+      }
+      g.lineTo(p[p.length - 2], p[p.length - 1]);
+      g.stroke();
+    }
+    g.restore();
+  }
+  function paintStrokes(g, strokes) {
+    g.clearRect(0, 0, PAD_W, PAD_H);
+    for (const s of strokes) paintStroke(g, s);
+  }
+  // Where the drawing is (in view coordinates), to place a flame if the maker didn't.
+  function strokesBox(strokes) {
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (const s of strokes) {
+      if (s.i === ERASER) continue;
+      const r = WIDTHS[s.w] / 2;
+      for (let k = 0; k < s.p.length; k += 2) {
+        x0 = Math.min(x0, s.p[k] - r); x1 = Math.max(x1, s.p[k] + r);
+        y0 = Math.min(y0, s.p[k + 1] - r); y1 = Math.max(y1, s.p[k + 1] + r);
+      }
+    }
+    if (x0 > x1) return null;
+    const k = VIEW_W / PAD_W;
+    return { x0: x0 * k, y0: y0 * k, x1: x1 * k, y1: y1 * k };
+  }
+  function flamesFor(c) {
+    if (c.mode === 'create') return null;      // the SVG says where its candle is
+    if (c.flames.length) return c.flames;
+    const box = strokesBox(c.strokes);
+    return box ? [[Math.round((box.x0 + box.x1) / 2), Math.max(30, Math.round(box.y0 - 4))]] : [[200, 190]];
+  }
+
+  // ---------- cloud: hand drawings too big for the link go to Supabase Storage ----------
+  const CLOUD = {
+    url: 'https://dcluindkvsbualyexaoh.supabase.co',
+    key: 'sb_publishable_x6wP17obaB3WaduaB4gDhA_HzFpE1dY',   // public key: can only add new files
+    bucket: 'krathong-drawings'
+  };
+  const drawUrl = id => `${CLOUD.url}/storage/v1/object/public/${CLOUD.bucket}/${id}`;
+  async function uploadDrawing(blob) {
+    const bytes = crypto.getRandomValues(new Uint8Array(18));
+    const id = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_') + '.png';
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = setTimeout(() => ctrl && ctrl.abort(), 20000);
+    try {
+      const res = await fetch(`${CLOUD.url}/storage/v1/object/${CLOUD.bucket}/${id}`, {
+        method: 'POST',
+        headers: { apikey: CLOUD.key, Authorization: 'Bearer ' + CLOUD.key, 'Content-Type': 'image/png', 'x-upsert': 'false', 'cache-control': '31536000' },
+        body: blob, signal: ctrl ? ctrl.signal : undefined
+      });
+      if (!res.ok) throw new Error('upload failed: ' + res.status);
+      return id;
+    } finally { clearTimeout(timer); }
+  }
+
+  // ---------- links ----------
+  // ?m=create&name=Mia&base=banana...      a created krathong
+  // ?m=draw&name=Mia&fx=200.150#d=...       a drawing carried in the link
+  // ?m=draw&did=xxxx.png&fx=...             a drawing stored in the cloud
+  const LINK_KEYS = ['m', 'name', 'from', 'msg', 'base', 'leaf', 'leafc', 'fl', 'center', 'candle', 'inc', 'did', 'fx'];
+  const hashDrawing = hash => { const m = /(?:^#|&)d=([A-Za-z0-9_-]+)/.exec(hash || ''); return m ? m[1] : ''; };
+  const hasKrathong = (p, hash) => LINK_KEYS.some(k => p.has(k)) || !!hashDrawing(hash);
+  function fromLocation(loc) {
+    const p = new URLSearchParams(loc.search), o = {};
+    for (const k of ['name', 'from', 'msg', 'base', 'leaf', 'leafc', 'center', 'candle']) if (p.has(k)) o[k] = p.get(k);
+    o.mode = p.get('m') || (hashDrawing(loc.hash) || p.has('did') ? 'draw' : 'create');
+    if (p.has('fl')) o.flowers = p.get('fl') === 'none' ? [] : p.get('fl').split(',');
+    if (p.has('inc')) o.incense = p.get('inc');
+    if (p.has('did')) o.drawId = p.get('did');
+    if (p.has('fx')) o.flames = p.get('fx').split(',').map(s => s.split('.').map(Number));
+    const d = hashDrawing(loc.hash);
+    if (d) o.strokes = decodeStrokes(d);
+    return normalize(o);
+  }
+  // Returns { query, hash } for a share link. Drawings: give drawId to leave strokes out.
+  function toLink(c) {
+    const p = new URLSearchParams();
+    p.set('m', c.mode);
+    if (c.name) p.set('name', c.name);
+    if (c.from) p.set('from', c.from);
+    if (c.msg.trim()) p.set('msg', c.msg.trim());
+    let hash = '';
+    if (c.mode === 'create') {
+      p.set('base', c.base); p.set('leaf', c.leaf); p.set('leafc', c.leafc);
+      p.set('fl', c.flowers.length ? c.flowers.join(',') : 'none');
+      p.set('center', c.center); p.set('candle', c.candle); p.set('inc', c.incense);
+    } else {
+      if (c.flames.length) p.set('fx', c.flames.map(f => f.join('.')).join(','));
+      if (c.drawId) p.set('did', c.drawId);
+      else hash = '#d=' + encodeStrokes(c.strokes);
+    }
+    return { query: p.toString().replace(/%2C/g, ','), hash };
+  }
+
+  // ---------- SVG for a created krathong (view 400×300) ----------
+  const CX = 200, CY = 180, RX = 130, RY = 48, H = 24;   // the base: an ellipse with a side band
+  const rim = (t, k = 1) => [CX + RX * k * Math.cos(t), CY + RY * k * Math.sin(t)];
+  const f1 = v => Math.round(v * 10) / 10;
+  const pt = q => f1(q[0]) + ',' + f1(q[1]);
+
+  function baseSVG(c) {
+    const L = CX - RX, R = CX + RX, top = `M${L},${CY} A${RX},${RY} 0 0 0 ${R},${CY}`;
+    const band = `${top} L${R},${CY + H} A${RX},${RY} 0 0 1 ${L},${CY + H} Z`;
+    const topEl = (fill, stroke) => `<ellipse cx="${CX}" cy="${CY}" rx="${RX}" ry="${RY}" fill="${fill}" stroke="${stroke}" stroke-width="2"/>`;
+    let s = '';
+    if (c.base === 'banana') {
+      s += `<path d="${band}" fill="#dfe9bd" stroke="#7fa24c" stroke-width="2"/>`;
+      for (let k = 1; k < 12; k++) { const x = L + (2 * RX) * k / 12, y = CY + RY * Math.sqrt(Math.max(0, 1 - ((x - CX) / RX) ** 2)); s += `<line x1="${f1(x)}" y1="${f1(y + 2)}" x2="${f1(x)}" y2="${f1(y + H - 2)}" stroke="#b6c98a" stroke-width="1.5"/>`; }
+      s += topEl('#f1f5d8', '#9dbb62');
+      for (const k of [0.78, 0.55, 0.32]) s += `<ellipse cx="${CX}" cy="${CY}" rx="${RX * k}" ry="${RY * k}" fill="none" stroke="#d3e0a8" stroke-width="2"/>`;
+    } else if (c.base === 'bread') {
+      s += `<path d="${band}" fill="#c27f37" stroke="#8d5420" stroke-width="2"/>`;
+      s += topEl('#e7b061', '#a86a2a');
+      for (let k = 0; k < 26; k++) { const t = k * 2.4, r = 0.25 + (k % 7) / 9; const q = rim(t, r); s += `<ellipse cx="${f1(q[0])}" cy="${f1(q[1])}" rx="2.4" ry="1.4" fill="#c98b3f" opacity=".7"/>`; }
+    } else if (c.base === 'coconut') {
+      s += `<path d="M${L},${CY} Q${L + 6},${CY + RY + H + 6} ${CX},${CY + RY + H} Q${R - 6},${CY + RY + H + 6} ${R},${CY} Z" fill="#6e4426" stroke="#43260f" stroke-width="2"/>`;
+      for (let k = 0; k < 9; k++) { const x = L + 22 + k * 27; s += `<path d="M${x},${CY + 18} q4,14 -2,30" fill="none" stroke="#8b5a35" stroke-width="2" opacity=".7"/>`; }
+      s += topEl('#f7f1e3', '#5a3418');
+      s += `<ellipse cx="${CX}" cy="${CY + 3}" rx="${RX - 12}" ry="${RY - 7}" fill="#fffaf0"/>`;
+    } else {
+      s += `<path d="${band}" fill="#f59cbf" stroke="#c75285" stroke-width="2"/>`;
+      for (let k = 0; k < 9; k++) {
+        const x0 = L + (2 * RX) * k / 9, x1 = L + (2 * RX) * (k + 1) / 9, xm = (x0 + x1) / 2;
+        const yb = CY + H + RY * Math.sqrt(Math.max(0, 1 - ((xm - CX) / RX) ** 2));
+        s += `<path d="M${f1(x0)},${f1(yb - 8)} Q${f1(xm)},${f1(yb + 6)} ${f1(x1)},${f1(yb - 8)} Q${f1(xm)},${f1(yb - 34)} ${f1(x0)},${f1(yb - 8)}" fill="#ffc2d9" stroke="#d2669a" stroke-width="1.5"/>`;
+      }
+      s += topEl('#ffe0ec', '#d06a98');
+    }
+    return s;
+  }
+
+  // One folded leaf / petal standing on the rim at angle t.
+  function leafSVG(t, w, lift, out, style, col) {
+    const b1 = rim(t - w), b2 = rim(t + w), m = rim(t);
+    const tipR = rim(t, out); const tip = [tipR[0], tipR[1] - lift];
+    if (style === 'round') {
+      const c1 = rim(t - w * 1.25, out * 0.97), c2 = rim(t + w * 1.25, out * 0.97);
+      return `<path d="M${pt(b1)} C${pt([c1[0], c1[1] - lift * 0.9])} ${pt([tip[0] - 2, tip[1] - 4])} ${pt(tip)} C${pt([tip[0] + 2, tip[1] - 4])} ${pt([c2[0], c2[1] - lift * 0.9])} ${pt(b2)} Z" fill="${col.a}" stroke="${col.line}" stroke-width="1.5"/>` +
+        `<path d="M${pt(m)} Q${pt([(m[0] + tip[0]) / 2, (m[1] + tip[1]) / 2 + 4])} ${pt(tip)}" fill="none" stroke="${col.b}" stroke-width="1.5"/>`;
+    }
+    // folded banana-leaf point: a light half and a shaded half
+    return `<path d="M${pt(b1)} L${pt(tip)} L${pt(m)} Z" fill="${col.a}"/>` +
+      `<path d="M${pt(m)} L${pt(tip)} L${pt(b2)} Z" fill="${col.b}"/>` +
+      `<path d="M${pt(b1)} L${pt(tip)} L${pt(b2)}" fill="none" stroke="${col.line}" stroke-width="1.5" stroke-linejoin="round"/>`;
+  }
+  function leafRing(c) {
+    const col = LEAF_COLORS[c.leafc], items = [];
+    const ring = (n, w, lift, out, shift, style) => {
+      for (let k = 0; k < n; k++) {
+        const t = (k + shift) / n * Math.PI * 2 - Math.PI / 2;
+        items.push({ y: Math.sin(t), svg: leafSVG(t, w, lift, out, style, col) });
+      }
+    };
+    if (c.leaf === 'layered') {
+      ring(14, 0.26, 44, 1.3, 0, 'pointed');
+      ring(14, 0.22, 26, 1.12, 0.5, 'pointed');
+    } else if (c.leaf === 'round') {
+      ring(12, 0.27, 34, 1.24, 0, 'round');
+    } else {
+      ring(16, 0.21, 36, 1.22, 0, 'pointed');
+    }
+    return items;
+  }
+
+  // Flowers drawn around (0,0), about 16 across.
+  function flowerSVG(kind) {
+    let s = '';
+    if (kind === 'marigold') {
+      for (let k = 0; k < 10; k++) { const a = k / 10 * 6.283; s += `<circle cx="${f1(Math.cos(a) * 9)}" cy="${f1(Math.sin(a) * 7)}" r="6" fill="#ef8d15"/>`; }
+      for (let k = 0; k < 7; k++) { const a = k / 7 * 6.283 + .3; s += `<circle cx="${f1(Math.cos(a) * 5)}" cy="${f1(Math.sin(a) * 4 - 2)}" r="5" fill="#ffb02e"/>`; }
+      s += '<circle cx="0" cy="-3" r="4" fill="#ffd36a"/>';
+    } else if (kind === 'rose') {
+      s += '<ellipse cx="0" cy="0" rx="13" ry="11" fill="#d22f48"/><ellipse cx="0" cy="-2" rx="9" ry="7.5" fill="#e8475f"/>' +
+        '<path d="M-8,-1 Q-6,-9 2,-7 Q8,-5 6,1 Q3,6 -2,3 Q-5,0 -1,-3 Q3,-4 2,0" fill="none" stroke="#9e1830" stroke-width="1.6" stroke-linecap="round"/>';
+    } else if (kind === 'orchid') {
+      for (let k = 0; k < 5; k++) { const a = k / 5 * 6.283 - 1.57; s += `<ellipse cx="${f1(Math.cos(a) * 8)}" cy="${f1(Math.sin(a) * 6.5)}" rx="7" ry="5" transform="rotate(${f1(a * 57.3)} ${f1(Math.cos(a) * 8)} ${f1(Math.sin(a) * 6.5)})" fill="#b45fd8" stroke="#7d2fa3" stroke-width="1"/>`; }
+      s += '<ellipse cx="0" cy="3" rx="5" ry="4" fill="#6f1f92"/><circle cx="0" cy="-1" r="3" fill="#ffe7ff"/>';
+    } else {
+      for (const [dx, dy] of [[-6, 2], [6, 2], [0, -5]]) {
+        for (let k = 0; k < 5; k++) { const a = k / 5 * 6.283 - 1.57; s += `<ellipse cx="${f1(dx + Math.cos(a) * 3.6)}" cy="${f1(dy + Math.sin(a) * 3)}" rx="3.4" ry="2.4" fill="#fffdf7" stroke="#cfd6c8" stroke-width=".8"/>`; }
+        s += `<circle cx="${dx}" cy="${dy}" r="1.6" fill="#f2d66b"/>`;
+      }
+    }
+    return s;
+  }
+  function centerSVG(kind) {
+    const x = CX, y = CY + 2;
+    if (kind === 'lotus') {
+      return `<path d="M${x - 34},${y} Q${x - 46},${y - 26} ${x - 22},${y - 40} Q${x - 14},${y - 16} ${x - 4},${y}" fill="#f7a6c6" stroke="#c9508a" stroke-width="1.5"/>` +
+        `<path d="M${x + 34},${y} Q${x + 46},${y - 26} ${x + 22},${y - 40} Q${x + 14},${y - 16} ${x + 4},${y}" fill="#f7a6c6" stroke="#c9508a" stroke-width="1.5"/>` +
+        `<path d="M${x},${y + 2} C${x - 30},${y - 8} ${x - 22},${y - 58} ${x},${y - 86} C${x + 22},${y - 58} ${x + 30},${y - 8} ${x},${y + 2} Z" fill="#ffb9d3" stroke="#c9508a" stroke-width="2"/>` +
+        `<path d="M${x},${y + 1} C${x - 12},${y - 20} ${x - 8},${y - 56} ${x},${y - 84}" fill="none" stroke="#e57aa6" stroke-width="2"/>` +
+        `<path d="M${x},${y + 1} C${x + 14},${y - 18} ${x + 10},${y - 50} ${x + 2},${y - 80}" fill="#ff9fc3" opacity=".55"/>`;
+    }
+    if (kind === 'cone') {
+      let s = `<path d="M${x - 30},${y} L${x},${y - 96} L${x + 30},${y} Q${x},${y + 10} ${x - 30},${y} Z" fill="#4f9a44" stroke="#245e28" stroke-width="2"/>`;
+      for (let r = 0; r < 6; r++) {
+        const yy = y - 10 - r * 14, half = 26 * (1 - (r * 14 + 10) / 96), n = Math.max(1, 4 - Math.floor(r / 2));
+        for (let k = 0; k < n; k++) { const xx = x - half + (2 * half) * (k + 0.5) / n; s += `<circle cx="${f1(xx)}" cy="${yy}" r="3.6" fill="#fffdf4" stroke="#c9d2bd" stroke-width=".8"/>`; }
+      }
+      return s + `<g transform="translate(${x} ${y - 98}) scale(.7)">${flowerSVG('rose')}</g>`;
+    }
+    if (kind === 'bouquet') {
+      return `<g transform="translate(${x - 20} ${y - 12}) scale(1.35)">${flowerSVG('marigold')}</g>` +
+        `<g transform="translate(${x + 20} ${y - 12}) scale(1.35)">${flowerSVG('marigold')}</g>` +
+        `<g transform="translate(${x} ${y - 34}) scale(1.6)">${flowerSVG('marigold')}</g>`;
+    }
+    return '';
+  }
+  const CANDLE_AT = [CX + 40, CY + 16], CANDLE_H = 46;
+  function candleSVG(c) {
+    const [x, y] = CANDLE_AT, col = CANDLES[c.candle].c;
+    return `<rect x="${x - 6}" y="${y - CANDLE_H}" width="12" height="${CANDLE_H}" rx="3" fill="${col}" stroke="rgba(0,0,0,.25)" stroke-width="1"/>` +
+      `<rect x="${x - 4}" y="${y - CANDLE_H + 2}" width="3" height="${CANDLE_H - 6}" rx="1.5" fill="#fff" opacity=".45"/>` +
+      `<ellipse cx="${x}" cy="${y - CANDLE_H}" rx="6" ry="2" fill="#fff" opacity=".5"/>` +
+      `<line x1="${x}" y1="${y - CANDLE_H}" x2="${x}" y2="${y - CANDLE_H - 6}" stroke="#3a2a1a" stroke-width="2" stroke-linecap="round"/>`;
+  }
+  function incenseSVG(c) {
+    let s = '';
+    for (let k = 0; k < c.incense; k++) {
+      const bx = CX - 46 + k * 7, by = CY + 16, tx = bx - 10 + k * 7, ty = by - 74 + Math.abs(k - 1) * 4;
+      s += `<line x1="${bx}" y1="${by}" x2="${tx}" y2="${ty}" stroke="#8a4b2a" stroke-width="3" stroke-linecap="round"/>` +
+        `<line x1="${f1(bx + (tx - bx) * .55)}" y1="${f1(by + (ty - by) * .55)}" x2="${tx}" y2="${ty}" stroke="#b5692f" stroke-width="3.4" stroke-linecap="round"/>` +
+        `<circle class="inc-tip" cx="${tx}" cy="${ty}" r="2.6"/>` +
+        `<path class="inc-smoke" d="M${tx},${ty - 3} q-6,-10 0,-20 q6,-10 0,-22" style="animation-delay:${k * .5}s"/>`;
+    }
+    return s;
+  }
+
+  // Draws a created krathong into an <svg viewBox="0 0 400 300">. Returns where the flame goes.
+  function render(svg, c) {
+    const leaves = leafRing(c);
+    const back = leaves.filter(l => l.y < 0).sort((a, b) => a.y - b.y);
+    const front = leaves.filter(l => l.y >= 0).sort((a, b) => a.y - b.y);
+    const flowers = [];
+    if (c.flowers.length) {
+      const n = c.center === 'none' ? 9 : 8;
+      for (let k = 0; k < n; k++) {
+        const t = k / n * Math.PI * 2 + 0.2, q = rim(t, c.center === 'none' && k === n - 1 ? 0 : 0.7);
+        const sc = 0.95 + 0.3 * (Math.sin(t) + 1) / 2;
+        flowers.push({ y: q[1], svg: `<g transform="translate(${f1(q[0])} ${f1(q[1] - 4)}) scale(${f1(sc * 10) / 10})">${flowerSVG(c.flowers[k % c.flowers.length])}</g>` });
+      }
+    }
+    const behind = flowers.filter(f => f.y < CY).sort((a, b) => a.y - b.y);
+    const before = flowers.filter(f => f.y >= CY).sort((a, b) => a.y - b.y);
+    svg.innerHTML = baseSVG(c) + back.map(l => l.svg).join('') + behind.map(f => f.svg).join('') +
+      centerSVG(c.center) + incenseSVG(c) + candleSVG(c) + before.map(f => f.svg).join('') + front.map(l => l.svg).join('');
+    return [[CANDLE_AT[0], CANDLE_AT[1] - CANDLE_H - 6]];
+  }
+
+  window.Krathong = {
+    BASES, LEAVES, LEAF_COLORS, FLOWERS, CENTERS, CANDLES, INKS, ERASER, WIDTHS,
+    PAD_W, PAD_H, VIEW_W, VIEW_H, WL, MAX_NAME, MAX_MSG, MAX_FLAMES,
+    defaults, normalize, render, flamesFor, strokesBox,
+    encodeStrokes, decodeStrokes, simplify, paintStroke, paintStrokes,
+    hasKrathong, fromLocation, toLink, uploadDrawing, drawUrl
+  };
+})();

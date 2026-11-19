@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b1433">
+<meta name="description" content="Draw or create your own krathong, light the candle, make a wish and float it on the river under the full moon.">
+<title>Loy Krathong</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Pacifico&family=Nunito:wght@600;800&family=Mitr:wght@400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+<canvas id="river" aria-hidden="true"></canvas>
+
+<main class="stage">
+  <div class="head">
+    <h1 id="title">Happy Loy Krathong!</h1>
+    <p class="thai" lang="th">สุขสันต์วันลอยกระทง</p>
+    <p class="sub" id="status">Light the candle, make a wish…</p>
+    <p class="letter hidden" id="letter"></p>
+  </div>
+
+  <div class="k-wrap" id="kview">
+    <div class="k-body" id="kBody">
+      <div class="k-reflect" id="kRef" aria-hidden="true">
+        <svg class="k-svg" id="kSvgR" viewBox="0 0 400 300"></svg>
+        <canvas class="k-pad" id="kPadR" width="800" height="600"></canvas>
+      </div>
+      <svg class="k-svg" id="kSvg" viewBox="0 0 400 300" role="img" aria-label="Your krathong"></svg>
+      <canvas class="k-pad" id="kPad" width="800" height="600" aria-label="Drawing pad"></canvas>
+      <svg class="k-guide hidden" id="kGuide" viewBox="0 0 400 300" aria-hidden="true">
+        <path d="M52,200 L80,150 L104,186 L130,138 L156,180 L182,130 L200,176 L218,130 L244,180 L270,138 L296,186 L320,150 L348,200" />
+        <path d="M60,214 Q200,262 340,214" />
+        <path d="M200,176 C186,150 190,112 200,92 C210,112 214,150 200,176" />
+        <line class="water" x1="0" y1="252" x2="400" y2="252" />
+        <text x="200" y="272">water line: draw above it</text>
+      </svg>
+      <div class="flames" id="flames"></div>
+    </div>
+  </div>
+
+  <div class="panel" id="floatPanel">
+    <div class="hint" id="hint"><span class="hint-em" id="hintEm">🕯️</span><span id="hintText">Tap the candle to light it</span></div>
+    <input class="text-in hidden" id="wishIn" type="text" maxlength="80" placeholder="My wish (secret: it stays on this device)" autocomplete="off" enterkeyhint="done">
+    <div class="row">
+      <button id="lightBtn">🔥 Light the candle</button>
+      <button id="floatBtn" class="hidden">🌊 Let it float</button>
+      <button id="againBtn" class="hidden">🪷 Float it again</button>
+      <button id="makeOwnBtn" class="ghost hidden">🪷 Make my own krathong</button>
+      <button id="editBtn" class="ghost hidden">✏️ Back to making</button>
+    </div>
+  </div>
+
+  <section class="builder" id="builder" aria-label="Make the krathong">
+    <div class="switch" role="tablist" aria-label="How to make it">
+      <button type="button" class="sw-btn" id="swDraw" role="tab">✏️ Draw</button>
+      <button type="button" class="sw-btn" id="swCreate" role="tab">🧩 Create</button>
+    </div>
+    <label class="for-row">🪷 For <input id="bName" type="text" maxlength="30" placeholder="their name (or yours)" autocomplete="off" enterkeyhint="done"></label>
+    <nav class="tabs" id="bTabs" role="tablist"></nav>
+    <div class="tab-body scroll-ok" id="bBody"></div>
+    <div class="actions">
+      <button id="sendBtn">🎁 Send this krathong</button>
+      <button id="floatNowBtn" class="ghost">🌊 Float it now</button>
+    </div>
+  </section>
+</main>
+
+<div class="overlay hidden" id="roles">
+  <div class="moon-badge" aria-hidden="true">🌕</div>
+  <h2>Loy Krathong</h2>
+  <p>On the full moon, people float a krathong on the river: a little raft of leaves, flowers, a candle and incense, carrying a wish and letting bad luck drift away.</p>
+  <div class="role-buttons">
+    <button class="role" id="roleMaker"><span class="role-emoji">🪷</span><b>Make a krathong</b><small>Draw or create one, then send it to someone or float it yourself</small></button>
+    <button class="role" id="roleFloat"><span class="role-emoji">🌊</span><b>Float a krathong</b><small>Take a ready-made one to the river right now</small></button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="howBox">
+  <h2>Your krathong</h2>
+  <p>How would you like to make it?</p>
+  <div class="role-buttons">
+    <button class="role" id="howDraw"><span class="role-emoji">✏️</span><b>Draw your krathong</b><small>Draw it with your finger or mouse: any shape, any color</small></button>
+    <button class="role" id="howCreate"><span class="role-emoji">🧩</span><b>Create your krathong</b><small>Pick a base, folded leaves, flowers, a candle and incense</small></button>
+  </div>
+  <button class="ghost" id="howBack">← Back</button>
+</div>
+
+<div class="overlay hidden" id="start">
+  <div class="moon-badge" aria-hidden="true">🌕</div>
+  <h2 id="startTitle">A krathong for you!</h2>
+  <p id="startFrom" class="hidden"></p>
+  <p id="startText">Light its candle, make a wish, and set it on the river under the full moon.</p>
+  <button id="startBtn">🕯️ Go to the river</button>
+  <button class="ghost hidden" id="backBtn">✏️ Back to making</button>
+</div>
+
+<div class="overlay hidden" id="shareBox" role="dialog" aria-modal="true" aria-labelledby="shareTitle">
+  <h2 id="shareTitle">Your krathong is ready! 🎁</h2>
+  <p id="shareText">Send this link:</p>
+  <input id="shareLink" type="text" readonly>
+  <p class="small warn hidden" id="shareWarn">This link only works for others once the site is online (https://), for example on GitHub Pages.</p>
+  <div class="row">
+    <button id="copyBtn">📋 Copy link</button>
+    <button id="nativeShareBtn" class="hidden">📤 Share…</button>
+  </div>
+  <a class="ghost-link" id="openLink" target="_blank" rel="noopener">👀 Open it like they will</a>
+  <button class="ghost" id="shareClose">Keep making</button>
+</div>
+
+<div class="toast hidden" id="toast" role="status"></div>
+
+<script src="krathong.js?v=1"></script>
+<script src="river.js?v=1"></script>
+<script src="builder.js?v=1"></script>
+</body>
+</html>
