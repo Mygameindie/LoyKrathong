@@ -311,7 +311,7 @@
         if (!filled) return;
         commit(step);
         setColor(tool.color, true);
-        if (filled > K.PAD_W * K.PAD_H * 0.55) tip('That filled the whole background. Tap ↩︎ to undo, or close your shape first.');
+        if (filled > K.PAD_W * K.PAD_H * 0.55) tip('That colored the paper. It shows here, but only your krathong floats on the river.');
       };
       if (e.pointerType === 'touch') setTimeout(go, 120); else go();
       return;

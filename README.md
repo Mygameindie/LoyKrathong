@@ -16,7 +16,8 @@ across the water with their candles lit. Tap one to see whose it is and their me
     - color picker: 16 colors, any color, and your recent colors
     - size slider, undo and redo (two-finger tap = undo, three-finger tap = redo; Ctrl+Z / Ctrl+Shift+Z on a computer)
     - keyboard: B brush, G bucket, E eraser, C candle, [ and ] for size
-    - a guide with the water line. The paper stays behind: only the drawing floats.
+    - a guide with the water line. The paper stays behind: only the drawing floats. If you color the paper with
+      the bucket (a fill that reaches the edge of the paper), it shows while drawing but is see-through on the river.
   - **🧩 Create your krathong:** base (banana trunk, bread, coconut, lotus), folded leaves and color, flowers,
     the middle (lotus bud, flower cone, big marigold), candle color and 0–3 incense sticks.
   - **Name** (optional) and a **message** are shown on the river for everyone.

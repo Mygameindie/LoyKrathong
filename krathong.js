@@ -233,7 +233,8 @@
 
   // Paint bucket on a PAD_W×PAD_H context: fills the area of similar color around (x, y).
   // The edge is grown by 2px and painted *under* soft line edges, so no pale halo is left.
-  function floodFill(g, x, y, color) {
+  // With skipPaper, a fill that reaches the edge of the paper (a background fill) is left out: returns -1.
+  function floodFill(g, x, y, color, skipPaper) {
     const W = PAD_W, H = PAD_H, img = g.getImageData(0, 0, W, H), d = img.data;
     const n = parseInt(color.slice(1), 16), fr = n >> 16, fg = (n >> 8) & 255, fb = n & 255;
     const i0 = (y * W + x) * 4, sr = d[i0], sg = d[i0 + 1], sb = d[i0 + 2], sa = d[i0 + 3];
@@ -245,7 +246,7 @@
       return Math.abs(a - sa) + (Math.abs(d[i] - sr) + Math.abs(d[i + 1] - sg) + Math.abs(d[i + 2] - sb)) * Math.min(1, a / 255) < TOL;
     };
     const mask = new Uint8Array(W * H), stack = [x, y];
-    let count = 0;
+    let count = 0, edge = false;
     while (stack.length) {
       const py = stack.pop(), px0 = stack.pop();
       let px = px0;
@@ -253,10 +254,12 @@
       let up = false, down = false;
       for (; px < W && !mask[py * W + px] && same((py * W + px) * 4); px++) {
         mask[py * W + px] = 1; count++;
+        if (px === 0 || px === W - 1 || py === 0 || py === H - 1) edge = true;
         if (py > 0) { const m = !mask[(py - 1) * W + px] && same(((py - 1) * W + px) * 4); if (m && !up) stack.push(px, py - 1); up = m; }
         if (py < H - 1) { const m = !mask[(py + 1) * W + px] && same(((py + 1) * W + px) * 4); if (m && !down) stack.push(px, py + 1); down = m; }
       }
     }
+    if (skipPaper && edge) return -1;
     // grow the filled area by 2px
     let ring = mask;
     for (let step = 0; step < 2; step++) {
@@ -282,8 +285,10 @@
 
   // Paint a whole drawing. Works on any context, even a scaled one: bucket fills need real pixels,
   // so drawings with fills are painted on a full-size sheet first.
+  // transparent: leave out the paper. Bucket fills that reach the paper's edge are background, so
+  // they show while drawing but not on the river.
   let sheet = null;
-  function paintStrokes(g, strokes) {
+  function paintStrokes(g, strokes, transparent) {
     g.clearRect(0, 0, PAD_W, PAD_H);
     const direct = !strokes.some(s => s.t === 'f') && g.getTransform && g.getTransform().isIdentity;
     if (direct) { for (const s of strokes) paintStroke(g, s); return; }
@@ -291,7 +296,7 @@
     const sg = sheet.getContext('2d', { willReadFrequently: true });
     sg.setTransform(1, 0, 0, 1, 0, 0);
     sg.clearRect(0, 0, PAD_W, PAD_H);
-    for (const s of strokes) { if (s.t === 'f') floodFill(sg, s.p[0], s.p[1], s.c); else paintStroke(sg, s); }
+    for (const s of strokes) { if (s.t === 'f') floodFill(sg, s.p[0], s.p[1], s.c, transparent); else paintStroke(sg, s); }
     g.drawImage(sheet, 0, 0, PAD_W, PAD_H);
   }
   // Where the drawing is (in view coordinates), to place a flame if the maker didn't.
@@ -578,7 +583,7 @@
         const cv = document.createElement('canvas');
         cv.width = 560; cv.height = 420;
         const g = cv.getContext('2d'); g.scale(560 / PAD_W, 420 / PAD_H);
-        paintStrokes(g, c.strokes);
+        paintStrokes(g, c.strokes, true);
         const blob = await new Promise(res => cv.toBlob(res, 'image/png'));
         row.draw_id = await uploadDrawing(blob);
       }
@@ -608,7 +613,7 @@
       }
       const flames = flamesFor(c);
       if (c.strokes.length) {
-        g.save(); g.scale(SPRITE_W / PAD_W, SPRITE_H / PAD_H); paintStrokes(g, c.strokes); g.restore();
+        g.save(); g.scale(SPRITE_W / PAD_W, SPRITE_H / PAD_H); paintStrokes(g, c.strokes, true); g.restore();
         done(flames);
       } else if (c.drawId) {
         const img = new Image();

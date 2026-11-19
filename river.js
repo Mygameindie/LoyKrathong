@@ -26,7 +26,7 @@
   let cloudImg = null, cloudFor = '';
   function paintPad() {
     if (cfg.mode !== 'draw') return;
-    if (cfg.strokes.length || !cfg.drawId) { K.paintStrokes(padG, cfg.strokes); return; }
+    if (cfg.strokes.length || !cfg.drawId) { K.paintStrokes(padG, cfg.strokes, mode !== 'build'); return; }   // on the river the paper is see-through
     padG.clearRect(0, 0, K.PAD_W, K.PAD_H);
     if (cloudImg && cloudFor === cfg.drawId) { padG.drawImage(cloudImg, 0, 0, K.PAD_W, K.PAD_H); return; }
     const img = new Image(), id = cfg.drawId;
