@@ -248,6 +248,7 @@
       g.beginPath(); g.ellipse(r.x, r.y, r.w * (0.5 + r.t * 0.5), r.w * 0.12 * (0.5 + r.t * 0.5), 0, 0, 6.283); g.stroke();
     }
 
+    drawOthers(dt);
     animateKrathong(dt);
 
     // wishes rising like sparkles
@@ -262,6 +263,93 @@
     }
     g.globalAlpha = 1;
   }
+
+  // ---------- everyone's krathongs on the shared river ----------
+  const others = [];         // { id, cfg, sp, x, d, td, vx, p, mine, name, msg, at }
+  let lastSeen = '', todayCount = null, rowsShown = new Set();
+  const riverBottom = () => Math.max(horizon + 60, mode === 'river' ? vh - 190 : wlY - 10);
+  const laneY = d => horizon + 4 + Math.pow(d, 1.5) * (riverBottom() - horizon);     // d: 0 = horizon .. 1 = near
+  function addOther(row, opts = {}) {
+    if (rowsShown.has(row.id)) return;
+    rowsShown.add(row.id);
+    const c = K.fromRow(row);
+    const o = {
+      id: row.id, cfg: c, sp: null, mine: !!opts.mine, name: c.name, msg: c.msg, at: row.created_at,
+      d: opts.enter ? 1.1 : 0.12 + Math.random() * 0.85, x: opts.x != null ? opts.x : Math.random() * vw,
+      vx: (Math.random() < 0.5 ? -1 : 1) * (5 + Math.random() * 10), p: Math.random() * 6.3
+    };
+    o.td = opts.mine ? 0.75 : opts.enter ? 0.3 + Math.random() * 0.6 : o.d;
+    others.push(o);
+    if (others.length > 90) { const k = others.findIndex(x => !x.mine); if (k >= 0) others.splice(k, 1); }
+    K.makeSprite(c).then(sp => { o.sp = sp; });
+  }
+  function drawOthers(dt) {
+    others.sort((a, b) => a.d - b.d);
+    const span = Math.max(1, wlY - horizon);
+    for (const o of others) {
+      o.d += (o.td - o.d) * Math.min(1, dt * 0.25);
+      o.p += dt;
+      const y = laneY(o.d), sc = Math.max(0.05, (y - horizon) / span), w = Math.min(kw * 0.6, 260, vw * 0.5) * Math.min(1.3, sc), h = w * 0.75;
+      o.x += o.vx * sc * dt;
+      if (o.x < -w) o.x = vw + w; else if (o.x > vw + w) o.x = -w;
+      o.box = { x: o.x - w / 2, y: y - h * K.WL / K.VIEW_H, w, h };
+      const bob = reduced ? 0 : Math.sin(o.p * 1.3) * 2 * sc;
+      const fl = 0.85 + 0.15 * Math.sin(o.p * 9) * Math.sin(o.p * 5.3);
+      // candle light on the water
+      const gw = w * 0.5, gr = g.createRadialGradient(o.x, y, 0, o.x, y, gw);
+      gr.addColorStop(0, `rgba(255,170,70,${0.3 * fl})`); gr.addColorStop(1, 'rgba(255,170,70,0)');
+      g.save(); g.translate(o.x, y); g.scale(1, 0.35); g.fillStyle = gr; g.fillRect(-gw, -gw, gw * 2, gw * 2); g.restore();
+      if (o.sp) {
+        g.globalAlpha = 0.22; g.save(); g.translate(0, y); g.scale(1, -0.8); g.translate(0, -y);   // dim reflection
+        g.drawImage(o.sp.canvas, 0, 0, K.SPRITE_W, K.SPRITE_H * K.WL / K.VIEW_H, o.box.x, o.box.y, w, y - o.box.y);
+        g.restore(); g.globalAlpha = 1;
+        g.drawImage(o.sp.canvas, o.box.x, o.box.y + bob, w, h);
+        for (const [fx, fy] of o.sp.flames) {
+          const px = o.box.x + fx / K.VIEW_W * w, py = o.box.y + bob + fy / K.VIEW_H * h, r = Math.max(1.5, w * 0.03);
+          const fg = g.createRadialGradient(px, py - r, 0, px, py - r, r * 5);
+          fg.addColorStop(0, `rgba(255,200,90,${0.55 * fl})`); fg.addColorStop(1, 'rgba(255,200,90,0)');
+          g.fillStyle = fg; g.fillRect(px - r * 5, py - r * 6, r * 10, r * 10);
+          g.fillStyle = '#ffe9a8'; g.beginPath(); g.ellipse(px, py - r * 1.2, r * 0.7 * fl, r * 1.4, 0, 0, 6.283); g.fill();
+        }
+      }
+      if (o.mine && w > 30) {
+        g.font = `800 ${Math.round(Math.max(11, w * 0.09))}px Nunito, sans-serif`; g.textAlign = 'center';
+        g.fillStyle = '#ffcf5a'; g.shadowColor = 'rgba(0,0,0,.6)'; g.shadowBlur = 4;
+        g.fillText('★ yours', o.x, o.box.y + bob - 4); g.shadowBlur = 0;
+      }
+    }
+  }
+  async function pollRiver() {
+    try {
+      const rows = await K.fetchRiver(lastSeen);
+      const first = !lastSeen;
+      for (const r of rows) { addOther(r, { enter: !first }); lastSeen = r.created_at; }
+      const c = await K.countSince(new Date(Date.now() - 24 * 3600e3).toISOString());
+      if (c != null) { todayCount = c; if (step === 'river') setStep('river'); }
+    } catch (e) { console.warn(e); }
+  }
+  setInterval(() => { if (!document.hidden) pollRiver(); }, 20000);
+  // tap a krathong on the river to see whose it is
+  const tag = $('tag');
+  let tagTimer = 0;
+  const ago = iso => {
+    const m = Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 60000));
+    return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
+  };
+  addEventListener('pointerdown', e => {
+    if (e.target.closest('button, input, .builder, .overlay, .panel, #tag') || (mode !== 'river' && e.target.closest('.k-wrap'))) return;
+    const hit = others.slice().reverse().find(o => o.box && e.clientX >= o.box.x && e.clientX <= o.box.x + o.box.w && e.clientY >= o.box.y && e.clientY <= o.box.y + o.box.h);
+    if (!hit) { tag.classList.add('hidden'); return; }
+    tag.replaceChildren();
+    const b = document.createElement('b'); b.textContent = (hit.mine ? '★ ' : '🪷 ') + (hit.name ? `${hit.name}'s krathong` : 'A krathong');
+    const sm = document.createElement('small'); sm.textContent = ago(hit.at);
+    tag.append(b, sm);
+    if (hit.msg) { const q = document.createElement('span'); q.textContent = `“${hit.msg}”`; tag.append(q); }
+    tag.style.left = Math.min(vw - 130, Math.max(130, hit.x)) + 'px';
+    tag.style.top = Math.max(70, hit.box.y - 8) + 'px';
+    tag.classList.remove('hidden');
+    clearTimeout(tagTimer); tagTimer = setTimeout(() => tag.classList.add('hidden'), 4500);
+  });
 
   // ---------- our krathong on the water ----------
   let away = null;          // { t, dx } while floating away
@@ -279,6 +367,7 @@
       alpha = p < 0.85 ? 1 : 1 - (p - 0.85) / 0.15;
       if (p >= 1 && step === 'away') finishFloat(x);
     }
+    if (mode === 'river') return;
     if (mode === 'float' || mode === 'build') {
       body.style.transform = `translate(${(x - kx).toFixed(1)}px, ${(y - wlY + bob * s).toFixed(1)}px) scale(${s.toFixed(3)}) rotate(${tilt.toFixed(2)}deg)`;
       body.style.opacity = alpha.toFixed(2);
@@ -304,10 +393,13 @@
     show('lightBtn', s === 'light');
     show('floatBtn', s === 'wish');
     show('wishIn', s === 'wish');
-    show('hint', s === 'light' || s === 'wish');
-    show('againBtn', s === 'gone');
+    const released = setStep.release;
+    show('againBtn', s === 'gone' && !released);
     show('makeOwnBtn', s === 'gone' && !fromBuilder);
     show('editBtn', s === 'gone' && fromBuilder);
+    show('riverBtn', s === 'gone');
+    show('riverMakeBtn', s === 'river');
+    show('hint', s === 'light' || s === 'wish' || s === 'river');
     if (s === 'light') {
       hintEm.textContent = '🕯️'; hintText.textContent = flames.length > 1 ? 'Tap the candles to light them' : 'Tap the candle to light it';
       setStatus('Light the candle, make a wish…');
@@ -318,6 +410,11 @@
       setStatus('There it goes… 🌊');
     } else if (s === 'gone') {
       setStatus(cfg.name ? `May your wish come true, ${cfg.name}, and your bad luck float away 🌕` : 'May your wish come true, and your bad luck float away 🌕');
+    } else if (s === 'river') {
+      hintEm.textContent = '🪷';
+      hintText.textContent = todayCount == null ? 'Tap a krathong to see who released it'
+        : `${todayCount} krathong${todayCount === 1 ? '' : 's'} released today · tap one to see whose it is`;
+      setStatus('Everyone\'s krathongs, floating together 🌕');
     }
   }
   function lightFlame(f) {
@@ -339,13 +436,26 @@
     ripples.push({ x: kx, y: wlY, w: kw * 0.6, t: 0 }, { x: kx, y: wlY, w: kw * 0.4, t: -0.5 });
     if (w) wishes.push({ text: w.length > 40 ? w.slice(0, 40) + '…' : w, x: kx, y: wlY - kw * 0.5, t: 0 });
     splash(); farewell();
+    if (setStep.release) {
+      releasing = K.release(cfg).catch(e => { console.warn(e); return null; });
+    }
     setStep('away');
   }
+  let releasing = null;
   function finishFloat(x) {
     lights.push(newLight(0.03, x / vw));      // ours joins the others near the horizon
     for (let k = 0; k < 6; k++) setTimeout(() => spawnLantern(vw * (0.2 + Math.random() * 0.6)), k * 500);
     for (let k = 0; k < 4; k++) setTimeout(firework, 300 + k * 700);
     setStep('gone');
+    if (releasing) {
+      const p = releasing; releasing = null;
+      p.then(row => {
+        if (!row) { App.toast && App.toast('Couldn\'t reach the shared river. Your krathong floated only here.'); return; }
+        addOther(row, { mine: true, enter: true, x });
+        if (todayCount != null) todayCount++;
+        setStatus(cfg.name ? `${cfg.name}, your krathong joined everyone on the river 🌕` : 'Your krathong joined everyone on the river 🌕');
+      });
+    }
   }
   $('floatBtn').addEventListener('click', floatAway);
   wishIn.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); floatAway(); } });
@@ -368,6 +478,7 @@
   ['pointerup', 'pointercancel'].forEach(t => wrap.addEventListener(t, () => { drag = null; }));
 
   $('againBtn').addEventListener('click', () => App.enterFloat({ fromBuilder: setStep.fromBuilder, keepOverlay: true }));
+  $('riverBtn').addEventListener('click', () => App.enterRiver());
 
   // ---------- stop iOS zoom / bounce ----------
   ['gesturestart', 'gesturechange', 'gestureend'].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));
@@ -397,23 +508,33 @@
     enterBuild() {
       mode = 'build'; away = null;
       document.body.classList.add('mode-build');
-      document.body.classList.remove('mode-float');
+      document.body.classList.remove('mode-float', 'mode-river');
       $('start').classList.add('hidden');
       render(); showLetter();
       setStatus('Your krathong, live 👀');
+      requestAnimationFrame(layout);
+    },
+    enterRiver() {
+      mode = 'river'; away = null;
+      document.body.classList.remove('mode-build', 'mode-float');
+      document.body.classList.add('mode-river');
+      $('start').classList.add('hidden');
+      cfg = K.normalize({ name: '' }); applyTitle(); showLetter();
+      setStep('river');
       requestAnimationFrame(layout);
     },
     enterFloat(opts) {
       opts = opts || {};
       mode = 'float'; away = null; wishes.length = 0;
       setStep.fromBuilder = !!opts.fromBuilder;
-      document.body.classList.remove('mode-build');
+      setStep.release = !!opts.release;
+      document.body.classList.remove('mode-build', 'mode-river');
       document.body.classList.add('mode-float');
       wishIn.value = '';
       render(); showLetter();
       setStep('light');
       $('backBtn').classList.toggle('hidden', !opts.fromBuilder);
-      if (!opts.keepOverlay) {
+      if (!opts.keepOverlay && !opts.release) {
         $('startTitle').textContent = cfg.name ? `A krathong for ${cfg.name}!` : 'A krathong for you!';
         const from = $('startFrom');
         from.textContent = cfg.from ? `Made with love by ${cfg.from} 💌` : '';
@@ -428,4 +549,5 @@
   layout();
   render();
   requestAnimationFrame(frame);
+  pollRiver();
 })();

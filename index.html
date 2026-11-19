@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Pacifico&family=Nunito:wght@600;800&family=Mitr:wght@400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=1">
+<link rel="stylesheet" href="style.css?v=2">
 </head>
 <body>
 <canvas id="river" aria-hidden="true"></canvas>
@@ -51,7 +51,9 @@
       <button id="floatBtn" class="hidden">🌊 Let it float</button>
       <button id="againBtn" class="hidden">🪷 Float it again</button>
       <button id="makeOwnBtn" class="ghost hidden">🪷 Make my own krathong</button>
-      <button id="editBtn" class="ghost hidden">✏️ Back to making</button>
+      <button id="editBtn" class="ghost hidden">🪷 Make another</button>
+      <button id="riverBtn" class="ghost hidden">🌊 See everyone's krathongs</button>
+      <button id="riverMakeBtn" class="hidden">🪷 Make a krathong</button>
     </div>
   </div>
 
@@ -60,12 +62,12 @@
       <button type="button" class="sw-btn" id="swDraw" role="tab">✏️ Draw</button>
       <button type="button" class="sw-btn" id="swCreate" role="tab">🧩 Create</button>
     </div>
-    <label class="for-row">🪷 For <input id="bName" type="text" maxlength="30" placeholder="their name (or yours)" autocomplete="off" enterkeyhint="done"></label>
+    <label class="for-row">🪷 Name <input id="bName" type="text" maxlength="30" placeholder="shown on the river (optional)" autocomplete="off" enterkeyhint="done"></label>
     <nav class="tabs" id="bTabs" role="tablist"></nav>
     <div class="tab-body scroll-ok" id="bBody"></div>
     <div class="actions">
-      <button id="sendBtn">🎁 Send this krathong</button>
-      <button id="floatNowBtn" class="ghost">🌊 Float it now</button>
+      <button id="releaseBtn">🪷 Release krathong</button>
+      <button id="toRiverBtn" class="ghost">🌊 River</button>
     </div>
   </section>
 </main>
@@ -73,10 +75,10 @@
 <div class="overlay hidden" id="roles">
   <div class="moon-badge" aria-hidden="true">🌕</div>
   <h2>Loy Krathong</h2>
-  <p>On the full moon, people float a krathong on the river: a little raft of leaves, flowers, a candle and incense, carrying a wish and letting bad luck drift away.</p>
+  <p>On the full moon, people float a krathong on the river: a little raft of leaves, flowers, a candle and incense, carrying a wish and letting bad luck drift away. Make yours and release it to float with everyone else's.</p>
   <div class="role-buttons">
-    <button class="role" id="roleMaker"><span class="role-emoji">🪷</span><b>Make a krathong</b><small>Draw or create one, then send it to someone or float it yourself</small></button>
-    <button class="role" id="roleFloat"><span class="role-emoji">🌊</span><b>Float a krathong</b><small>Take a ready-made one to the river right now</small></button>
+    <button class="role" id="roleMaker"><span class="role-emoji">🪷</span><b>Make a krathong</b><small>Draw or create one, then release it onto the river</small></button>
+    <button class="role" id="roleRiver"><span class="role-emoji">🌊</span><b>See the river</b><small>Watch everyone's krathongs floating together</small></button>
   </div>
 </div>
 
@@ -99,23 +101,12 @@
   <button class="ghost hidden" id="backBtn">✏️ Back to making</button>
 </div>
 
-<div class="overlay hidden" id="shareBox" role="dialog" aria-modal="true" aria-labelledby="shareTitle">
-  <h2 id="shareTitle">Your krathong is ready! 🎁</h2>
-  <p id="shareText">Send this link:</p>
-  <input id="shareLink" type="text" readonly>
-  <p class="small warn hidden" id="shareWarn">This link only works for others once the site is online (https://), for example on GitHub Pages.</p>
-  <div class="row">
-    <button id="copyBtn">📋 Copy link</button>
-    <button id="nativeShareBtn" class="hidden">📤 Share…</button>
-  </div>
-  <a class="ghost-link" id="openLink" target="_blank" rel="noopener">👀 Open it like they will</a>
-  <button class="ghost" id="shareClose">Keep making</button>
-</div>
 
+<div class="tag hidden" id="tag" role="status"></div>
 <div class="toast hidden" id="toast" role="status"></div>
 
-<script src="krathong.js?v=1"></script>
-<script src="river.js?v=1"></script>
-<script src="builder.js?v=1"></script>
+<script src="krathong.js?v=2"></script>
+<script src="river.js?v=2"></script>
+<script src="builder.js?v=2"></script>
 </body>
 </html>

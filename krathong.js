@@ -436,7 +436,93 @@
     return [[CANDLE_AT[0], CANDLE_AT[1] - CANDLE_H - 6]];
   }
 
+  // ---------- the shared river: every released krathong is a row in Supabase ----------
+  const LOOK_KEYS = ['base', 'leaf', 'leafc', 'flowers', 'center', 'candle', 'incense'];
+  const MAX_CODE = 40000;                    // longer drawings are stored as a PNG instead
+  async function api(path, opts = {}) {
+    const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = setTimeout(() => ctrl && ctrl.abort(), 15000);
+    try {
+      const res = await fetch(`${CLOUD.url}/rest/v1/${path}`, Object.assign({}, opts, {
+        headers: Object.assign({ apikey: CLOUD.key, Authorization: 'Bearer ' + CLOUD.key }, opts.headers || {}),
+        signal: ctrl ? ctrl.signal : undefined
+      }));
+      if (!res.ok) throw new Error('river: ' + res.status);
+      return res;
+    } finally { clearTimeout(timer); }
+  }
+  function fromRow(r) {
+    const o = Object.assign({}, r.look || {}, { mode: r.mode, name: r.name, msg: r.msg, flames: r.flames, drawId: r.draw_id || '' });
+    if (r.strokes) o.strokes = decodeStrokes(r.strokes);
+    return normalize(o);
+  }
+  const ROW_FIELDS = 'id,created_at,name,msg,mode,look,strokes,draw_id,flames';
+  // Newest krathongs (optionally only those after a given time), oldest first.
+  async function fetchRiver(since, limit = 60) {
+    const q = `krathongs?select=${ROW_FIELDS}&order=created_at.desc&limit=${limit}` + (since ? `&created_at=gt.${encodeURIComponent(since)}` : '');
+    const rows = await (await api(q)).json();
+    return rows.reverse();
+  }
+  async function countSince(iso) {
+    const res = await api(`krathongs?select=id&created_at=gte.${encodeURIComponent(iso)}`, { headers: { Prefer: 'count=exact', Range: '0-0' } });
+    const m = /\/(\d+)$/.exec(res.headers.get('content-range') || '');
+    return m ? +m[1] : null;
+  }
+  // Puts a krathong on the shared river. Resolves to the stored row.
+  async function release(c) {
+    const row = { name: c.name, msg: c.msg.trim(), mode: c.mode, look: {}, flames: c.flames };
+    if (c.mode === 'create') LOOK_KEYS.forEach(k => { row.look[k] = c[k]; });
+    else {
+      const code = encodeStrokes(c.strokes);
+      if (code.length <= MAX_CODE) row.strokes = code;
+      else {
+        const cv = document.createElement('canvas');
+        cv.width = 560; cv.height = 420;
+        const g = cv.getContext('2d'); g.scale(560 / PAD_W, 420 / PAD_H);
+        paintStrokes(g, c.strokes);
+        const blob = await new Promise(res => cv.toBlob(res, 'image/png'));
+        row.draw_id = await uploadDrawing(blob);
+      }
+    }
+    const res = await api('krathongs', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' }, body: JSON.stringify(row) });
+    return (await res.json())[0];
+  }
+
+  // A small picture of any krathong (for drawing many of them on the river).
+  const SPRITE_W = 240, SPRITE_H = 180;
+  function makeSprite(c) {
+    return new Promise(resolve => {
+      const cv = document.createElement('canvas');
+      cv.width = SPRITE_W; cv.height = SPRITE_H;
+      const g = cv.getContext('2d');
+      const done = flames => resolve({ canvas: cv, flames });
+      if (c.mode === 'create') {
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        const flames = render(svg, c);
+        const src = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VIEW_W} ${VIEW_H}" width="${SPRITE_W}" height="${SPRITE_H}">` +
+          `<style>.inc-tip{fill:#ff6a2a}.inc-smoke{display:none}</style>${svg.innerHTML}</svg>`;
+        const img = new Image();
+        img.onload = () => { g.drawImage(img, 0, 0, SPRITE_W, SPRITE_H); done(flames); };
+        img.onerror = () => done(flames);
+        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(src);
+        return;
+      }
+      const flames = flamesFor(c);
+      if (c.strokes.length) {
+        g.save(); g.scale(SPRITE_W / PAD_W, SPRITE_H / PAD_H); paintStrokes(g, c.strokes); g.restore();
+        done(flames);
+      } else if (c.drawId) {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => { g.drawImage(img, 0, 0, SPRITE_W, SPRITE_H); done(flames); };
+        img.onerror = () => done(flames);
+        img.src = drawUrl(c.drawId);
+      } else done(flames);
+    });
+  }
+
   window.Krathong = {
+    fromRow, fetchRiver, countSince, release, makeSprite, SPRITE_W, SPRITE_H,
     BASES, LEAVES, LEAF_COLORS, FLOWERS, CENTERS, CANDLES, INKS, ERASER, WIDTHS,
     PAD_W, PAD_H, VIEW_W, VIEW_H, WL, MAX_NAME, MAX_MSG, MAX_FLAMES,
     defaults, normalize, render, flamesFor, strokesBox,

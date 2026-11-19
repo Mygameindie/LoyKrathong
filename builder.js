@@ -3,7 +3,6 @@
   'use strict';
   const K = window.Krathong, App = window.App;
   const $ = id => document.getElementById(id);
-  const isTouch = matchMedia('(pointer: coarse)').matches;
 
   // ---------- the maker's draft (kept on this device only) ----------
   const DRAFT_KEY = 'krathong-draft-v1';
@@ -110,10 +109,9 @@
     return 'Draw on the krathong area above with your finger or mouse.';
   }
   function wordsHTML() {
-    return `<div class="group"><h3>From</h3><input class="text-in" id="bFrom" type="text" maxlength="${K.MAX_NAME}" placeholder="your name" value="${esc(cfg.from)}" autocomplete="off" enterkeyhint="done"></div>` +
-      `<div class="group"><h3>A message for them</h3><input class="text-in" id="bMsg" type="text" maxlength="${K.MAX_MSG}" placeholder="e.g. Wishing you all the luck 🌕" value="${esc(cfg.msg)}" autocomplete="off" enterkeyhint="done">` +
-      `<p class="note"><span id="bMsgCount">${cfg.msg.length}</span>/${K.MAX_MSG} · shown at the river</p>` +
-      `<div class="chips">${['Happy Loy Krathong!', 'May all your wishes come true', 'Let the bad luck float away', 'Thinking of you 💛'].map(m => `<button type="button" class="chip" data-msg="${esc(m)}">${esc(m)}</button>`).join('')}</div></div>`;
+    return `<div class="group"><h3>Message on the river</h3><input class="text-in" id="bMsg" type="text" maxlength="${K.MAX_MSG}" placeholder="e.g. Wishing you all the luck 🌕" value="${esc(cfg.msg)}" autocomplete="off" enterkeyhint="done">` +
+      `<p class="note"><span id="bMsgCount">${cfg.msg.length}</span>/${K.MAX_MSG} · everyone on the river can read it. Your wish stays secret.</p>` +
+      `<div class="chips">${['Happy Loy Krathong!', 'May all our wishes come true', 'Let the bad luck float away', 'Peace and love 💛'].map(m => `<button type="button" class="chip" data-msg="${esc(m)}">${esc(m)}</button>`).join('')}</div></div>`;
   }
   function renderBody() {
     const t = TABS[cfg.mode].find(x => x.id === tab) || TABS[cfg.mode][0];
@@ -151,8 +149,7 @@
     }
   });
   bodyEl.addEventListener('input', e => {
-    if (e.target.id === 'bFrom') { cfg.from = e.target.value; App.setKrathong(cfg); save(); }
-    else if (e.target.id === 'bMsg') { cfg.msg = e.target.value.slice(0, K.MAX_MSG); $('bMsgCount').textContent = cfg.msg.length; App.setKrathong(cfg); save(); }
+    if (e.target.id === 'bMsg') { cfg.msg = e.target.value.slice(0, K.MAX_MSG); $('bMsgCount').textContent = cfg.msg.length; App.setKrathong(cfg); save(); }
   });
   document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches && e.target.matches('#builder input')) e.target.blur(); });
   const nameIn = $('bName');
@@ -207,7 +204,7 @@
   pad.addEventListener('lostpointercapture', endStroke);
 
   // ---------- going between screens ----------
-  function hideOverlays() { ['roles', 'howBox', 'shareBox', 'start'].forEach(id => $(id).classList.add('hidden')); }
+  function hideOverlays() { ['roles', 'howBox', 'start'].forEach(id => $(id).classList.add('hidden')); }
   function enterBuild(mode) {
     hideOverlays();
     if (mode) { cfg.mode = mode; tab = mode === 'draw' ? 'pad' : 'base'; save(); }
@@ -216,107 +213,43 @@
     App.enterBuild();
     renderSwitch(); renderTabs(); renderBody(); showGuide();
   }
-  function floatNow(c, fromBuilder) {
+  function floatNow(c, fromBuilder, release) {
     hideOverlays();
     App.setKrathong(c);
-    App.enterFloat({ fromBuilder });
+    App.enterFloat({ fromBuilder, release });
     showGuide();
   }
+  function toRiver() { hideOverlays(); App.enterRiver(); showGuide(); }
   function askHow() { hideOverlays(); $('howBox').classList.remove('hidden'); }
   $('roleMaker').addEventListener('click', askHow);
-  $('roleFloat').addEventListener('click', () => floatNow(K.normalize({ mode: 'create', center: 'lotus', flowers: ['marigold', 'rose', 'jasmine'] }), false));
+  $('roleRiver').addEventListener('click', toRiver);
+  $('riverMakeBtn').addEventListener('click', askHow);
+  $('toRiverBtn').addEventListener('click', toRiver);
   $('howDraw').addEventListener('click', () => enterBuild('draw'));
   $('howCreate').addEventListener('click', () => enterBuild('create'));
   $('howBack').addEventListener('click', () => { hideOverlays(); $('roles').classList.remove('hidden'); });
-  $('floatNowBtn').addEventListener('click', () => {
+  // Release: light it, make a wish, swipe it away, and it joins everyone on the shared river.
+  $('releaseBtn').addEventListener('click', () => {
     if (cfg.mode === 'draw' && !cfg.strokes.length) { toast('Draw your krathong first ✏️'); return; }
-    floatNow(cfg, true);
+    floatNow(Object.assign({}, cfg, { from: '' }), true, true);
   });
   $('editBtn').addEventListener('click', () => enterBuild());
   $('backBtn').addEventListener('click', () => enterBuild());
   $('makeOwnBtn').addEventListener('click', () => { cfg = loadDraft(); askHow(); });
 
-  // ---------- sending ----------
-  const LINK_LIMIT = 3000;                   // longer drawings go to the cloud instead of the link
-  let uploaded = { key: '', id: '' };
-  async function drawingId(code) {
-    if (uploaded.key === code) return uploaded.id;
-    const cv = document.createElement('canvas');
-    cv.width = K.PAD_W; cv.height = K.PAD_H;
-    K.paintStrokes(cv.getContext('2d'), cfg.strokes);
-    let blob = await new Promise(res => cv.toBlob(res, 'image/png'));
-    if (!blob || blob.size > 290000) {            // very busy drawing: send it a bit smaller
-      const small = document.createElement('canvas');
-      small.width = 560; small.height = 420;
-      small.getContext('2d').drawImage(cv, 0, 0, 560, 420);
-      blob = await new Promise(res => small.toBlob(res, 'image/png'));
-    }
-    if (!blob) throw new Error('no image');
-    const id = await K.uploadDrawing(blob);
-    uploaded = { key: code, id };
-    return id;
-  }
-  async function shareUrl() {
-    const c = Object.assign({}, App.krathong, { drawId: '' });
-    if (c.mode === 'draw') {
-      const code = K.encodeStrokes(c.strokes);
-      if (code.length > LINK_LIMIT) {
-        try { c.drawId = await drawingId(code); }
-        catch (e) { console.warn(e); toast('Couldn\'t upload the drawing, so it rides in a longer link.'); }
-      }
-    }
-    const { query, hash } = K.toLink(c);
-    return location.href.split(/[?#]/)[0] + '?' + query + hash;
-  }
-  function shareText() {
-    const n = App.krathong.name;
-    return n ? `🪷 I made you a krathong, ${n}! Light its candle, make a wish and float it on the river:` : '🪷 I made you a krathong! Light its candle, make a wish and float it on the river:';
-  }
-  async function copy(text) {
-    try { await navigator.clipboard.writeText(text); return true; } catch (e) {}
-    try { const inp = $('shareLink'); inp.focus(); inp.select(); inp.setSelectionRange(0, 99999); return document.execCommand('copy'); } catch (e) { return false; }
-  }
   let toastTimer = 0;
   function toast(msg) {
     const t = $('toast');
     t.textContent = msg; t.classList.remove('hidden');
-    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add('hidden'), 2400);
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add('hidden'), 2600);
   }
-  const canShare = () => !!navigator.share && isTouch;
-
-  const sendBtn = $('sendBtn');
-  sendBtn.addEventListener('click', async () => {
-    if (sendBtn.disabled) return;
-    if (cfg.mode === 'draw' && !cfg.strokes.length) { toast('Draw your krathong first ✏️'); return; }
-    const label = sendBtn.textContent;
-    sendBtn.disabled = true; sendBtn.textContent = '📤 Getting it ready…';
-    let url;
-    try { url = await shareUrl(); } finally { sendBtn.disabled = false; sendBtn.textContent = label; }
-    const n = App.krathong.name;
-    $('shareLink').value = url;
-    $('openLink').href = url;
-    $('shareWarn').classList.toggle('hidden', /^https:/.test(location.protocol) || /^(localhost|127\.)/.test(location.hostname));
-    $('nativeShareBtn').classList.toggle('hidden', !canShare());
-    $('shareTitle').textContent = n ? `${n}'s krathong is ready! 🎁` : 'Your krathong is ready! 🎁';
-    $('shareText').textContent = n ? `Send this link to ${n}:` : 'Send this link:';
-    $('shareBox').classList.remove('hidden');
-    if (canShare()) return;
-    if (await copy(url)) $('shareText').textContent = n ? `Link copied! Paste it in a message to ${n}.` : 'Link copied! Paste it in a message.';
-  });
-  $('copyBtn').addEventListener('click', async () => { toast(await copy($('shareLink').value) ? '📋 Link copied!' : 'Press and hold the link to copy it'); });
-  $('nativeShareBtn').addEventListener('click', async () => {
-    try { await navigator.share({ title: 'A krathong for you!', text: shareText(), url: $('shareLink').value }); }
-    catch (e) { if (e && e.name !== 'AbortError') toast('Couldn\'t open sharing. Copy the link instead.'); }
-  });
-  $('shareLink').addEventListener('focus', e => e.target.select());
-  $('shareClose').addEventListener('click', () => $('shareBox').classList.add('hidden'));
-  addEventListener('keydown', e => { if (e.key === 'Escape') $('shareBox').classList.add('hidden'); });
+  App.toast = toast;
 
   // ---------- first screen ----------
   if (K.hasKrathong(new URLSearchParams(location.search), location.hash)) {
     floatNow(K.fromLocation(location), false);          // opened a krathong someone sent
   } else {
-    App.setKrathong(cfg);
+    App.enterRiver();                                    // everyone's krathongs behind the welcome
     $('roles').classList.remove('hidden');
   }
 })();
