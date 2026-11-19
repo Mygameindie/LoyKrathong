@@ -30,7 +30,6 @@
     padG.clearRect(0, 0, K.PAD_W, K.PAD_H);
     if (cloudImg && cloudFor === cfg.drawId) { padG.drawImage(cloudImg, 0, 0, K.PAD_W, K.PAD_H); return; }
     const img = new Image(), id = cfg.drawId;
-    img.crossOrigin = 'anonymous';
     img.onload = () => { cloudImg = img; cloudFor = id; if (cfg.drawId === id) { paintPad(); copyReflection(); } };
     img.onerror = () => setStatus('Couldn\'t load the drawing. Check your connection and reload.');
     img.src = K.drawUrl(id);
@@ -45,7 +44,7 @@
     const src = K.photoSrc(p);
     el.classList.toggle('hidden', !src);
     if (!src) { el.removeAttribute('src'); return; }
-    if (el.getAttribute('src') !== src) { if (!p.src) el.crossOrigin = 'anonymous'; el.src = src; }
+    if (el.getAttribute('src') !== src) el.src = src;
     el.className = `k-photo ${p.layer} ${p.shape}`;
     el.style.left = (p.x / K.VIEW_W * 100) + '%';
     el.style.top = (p.y / K.VIEW_H * 100) + '%';
@@ -296,6 +295,27 @@
     if (others.length > 90) { const k = others.findIndex(x => !x.mine); if (k >= 0) others.splice(k, 1); }
     K.makeSprite(c).then(sp => { o.sp = sp; });
   }
+  // A candle flame at the tip of the wick (x, y) on a krathong w pixels wide, matching the big one's size.
+  function drawCandle(x, y, w, fl, wax, phase) {
+    const fw = Math.max(3, w * 0.046), fh = fw * 1.7;
+    if (wax) {                                   // drawn krathongs: the little wax candle under the flame
+      const cw = Math.max(2, w * 0.026), ch = w * 0.06;
+      g.fillStyle = '#ffd25e'; g.fillRect(x - cw / 2, y, cw, ch);
+      g.fillStyle = '#fff6d6'; g.fillRect(x - cw / 2, y, cw * 0.35, ch);
+    }
+    const glow = g.createRadialGradient(x, y - fh * 0.5, 0, x, y - fh * 0.5, fw * 4);
+    glow.addColorStop(0, `rgba(255,200,80,${0.5 * fl})`); glow.addColorStop(1, 'rgba(255,160,40,0)');
+    g.fillStyle = glow; g.fillRect(x - fw * 4, y - fh * 0.5 - fw * 4, fw * 8, fw * 8);
+    const sway = reduced ? 0 : Math.sin(phase * 7) * fw * 0.08;
+    const fg = g.createRadialGradient(x, y - fh * 0.3, 0, x, y - fh * 0.45, fh * 0.6);
+    fg.addColorStop(0, '#fffbe0'); fg.addColorStop(0.3, '#ffd34d'); fg.addColorStop(0.75, '#ff8a1f'); fg.addColorStop(1, 'rgba(255,80,0,0)');
+    g.fillStyle = fg;
+    g.beginPath();
+    g.moveTo(x, y);
+    g.bezierCurveTo(x - fw * 0.6, y - fh * 0.15, x - fw * 0.45 + sway, y - fh * 0.7, x + sway, y - fh * fl);
+    g.bezierCurveTo(x + fw * 0.45 + sway, y - fh * 0.7, x + fw * 0.6, y - fh * 0.15, x, y);
+    g.fill();
+  }
   function drawOthers(dt) {
     others.sort((a, b) => a.d - b.d);
     const span = Math.max(1, wlY - horizon);
@@ -317,13 +337,7 @@
         g.drawImage(o.sp.canvas, 0, 0, K.SPRITE_W, K.SPRITE_H * K.WL / K.VIEW_H, o.box.x, o.box.y, w, y - o.box.y);
         g.restore(); g.globalAlpha = 1;
         g.drawImage(o.sp.canvas, o.box.x, o.box.y + bob, w, h);
-        for (const [fx, fy] of o.sp.flames) {
-          const px = o.box.x + fx / K.VIEW_W * w, py = o.box.y + bob + fy / K.VIEW_H * h, r = Math.max(1.5, w * 0.03);
-          const fg = g.createRadialGradient(px, py - r, 0, px, py - r, r * 5);
-          fg.addColorStop(0, `rgba(255,200,90,${0.55 * fl})`); fg.addColorStop(1, 'rgba(255,200,90,0)');
-          g.fillStyle = fg; g.fillRect(px - r * 5, py - r * 6, r * 10, r * 10);
-          g.fillStyle = '#ffe9a8'; g.beginPath(); g.ellipse(px, py - r * 1.2, r * 0.7 * fl, r * 1.4, 0, 0, 6.283); g.fill();
-        }
+        for (const [fx, fy] of o.sp.flames) drawCandle(o.box.x + fx / K.VIEW_W * w, o.box.y + bob + fy / K.VIEW_H * h, w, fl, o.sp.wax, o.p);
       }
       if (o.mine && w > 30) {
         g.font = `800 ${Math.round(Math.max(11, w * 0.09))}px Nunito, sans-serif`; g.textAlign = 'center';

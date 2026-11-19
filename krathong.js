@@ -636,11 +636,12 @@
     return (await res.json())[0];
   }
 
-  function loadImg(src, cors) {
+  // Plain loading (no CORS mode): these pictures are only drawn, never read back, so this works
+  // whatever headers the storage sends.
+  function loadImg(src) {
     return new Promise(res => {
       if (!src) return res(null);
       const img = new Image();
-      if (cors) img.crossOrigin = 'anonymous';
       img.onload = () => res(img); img.onerror = () => res(null);
       img.src = src;
     });
@@ -675,7 +676,7 @@
     const cv = document.createElement('canvas');
     cv.width = SPRITE_W; cv.height = SPRITE_H;
     const g = cv.getContext('2d'), k = SPRITE_W / VIEW_W;
-    const photo = c.photo ? await loadImg(photoSrc(c.photo), !c.photo.src) : null;
+    const photo = c.photo ? await loadImg(photoSrc(c.photo)) : null;
     if (c.photo && c.photo.layer === 'back') drawPhoto(g, photo, c.photo, k);
     let flames;
     if (c.mode === 'create') {
@@ -688,14 +689,19 @@
     } else {
       flames = flamesFor(c);
       if (c.strokes.length) {
-        g.save(); g.scale(SPRITE_W / PAD_W, SPRITE_H / PAD_H); paintStrokes(g, c.strokes, true); g.restore();
+        // painted on its own layer: painting starts by wiping the sheet, which would erase a photo behind
+        const layer = document.createElement('canvas');
+        layer.width = SPRITE_W; layer.height = SPRITE_H;
+        const lg = layer.getContext('2d');
+        lg.scale(SPRITE_W / PAD_W, SPRITE_H / PAD_H); paintStrokes(lg, c.strokes, true);
+        g.drawImage(layer, 0, 0);
       } else if (c.drawId) {
-        const img = await loadImg(drawUrl(c.drawId), true);
+        const img = await loadImg(drawUrl(c.drawId));
         if (img) g.drawImage(img, 0, 0, SPRITE_W, SPRITE_H);
       }
     }
     if (c.photo && c.photo.layer === 'front') drawPhoto(g, photo, c.photo, k);
-    return { canvas: cv, flames };
+    return { canvas: cv, flames, wax: c.mode === 'draw' };
   }
 
   window.Krathong = {
