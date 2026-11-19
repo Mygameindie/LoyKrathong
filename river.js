@@ -337,6 +337,7 @@
     return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
   };
   addEventListener('pointerdown', e => {
+    if (mode === 'build') return;            // not while making a krathong
     if (e.target.closest('button, input, .builder, .overlay, .panel, #tag') || (mode !== 'river' && e.target.closest('.k-wrap'))) return;
     const hit = others.slice().reverse().find(o => o.box && e.clientX >= o.box.x && e.clientX <= o.box.x + o.box.w && e.clientY >= o.box.y && e.clientY <= o.box.y + o.box.h);
     if (!hit) { tag.classList.add('hidden'); return; }

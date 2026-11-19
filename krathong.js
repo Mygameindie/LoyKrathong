@@ -49,7 +49,8 @@
   const INKS = ['#ffffff', '#1d1a24', '#7a4a26', '#245e28', '#3d9a45', '#a6dc6a', '#ffe14d', '#ff9b1f',
     '#e8384b', '#ff8fbd', '#d24bd6', '#8c5cf0', '#3c7bf0', '#7fdcff', '#d4a537', '#f6e7c8'];
   const ERASER = 31;
-  const WIDTHS = [5, 10, 20, 38];
+  const WIDTHS = [5, 10, 20, 38];            // sizes of the first drawing format
+  const MIN_W = 2, MAX_W = 65;                // brush sizes, in pad pixels
 
   const DEFAULTS = {
     mode: 'create', name: '', from: '', msg: '',
@@ -63,15 +64,25 @@
   const clean = (s, n) => String(s == null ? '' : s).replace(/\s+/g, ' ').slice(0, n);
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
+  // A drawing is a list of steps: { t: 's' brush | 'e' eraser | 'f' paint bucket, c: '#rrggbb', w: size, p: [x, y, ...] }
+  const HEX = /^#[0-9a-f]{6}$/;
   function cleanStrokes(list) {
     if (!Array.isArray(list)) return [];
     const out = [];
-    for (const s of list.slice(0, 400)) {
+    for (const s of list.slice(0, 600)) {
       if (!s || !Array.isArray(s.p)) continue;
-      const ink = s.i === ERASER ? ERASER : clamp(s.i | 0, 0, INKS.length - 1);
+      let t = s.t, c = typeof s.c === 'string' ? s.c.toLowerCase() : '', w = +s.w;
+      if (!t) {                                   // older format: palette index + size index
+        t = s.i === ERASER ? 'e' : 's';
+        c = INKS[clamp(s.i | 0, 0, INKS.length - 1)];
+        w = WIDTHS[clamp(s.w | 0, 0, WIDTHS.length - 1)];
+      }
+      if (t !== 's' && t !== 'e' && t !== 'f') continue;
+      if (!HEX.test(c)) c = '#000000';
       const p = [];
-      for (let k = 0; k + 1 < s.p.length && p.length < 8000; k += 2) p.push(clamp(Math.round(+s.p[k] || 0), 0, PAD_W - 1), clamp(Math.round(+s.p[k + 1] || 0), 0, PAD_H - 1));
-      if (p.length) out.push({ i: ink, w: clamp(s.w | 0, 0, WIDTHS.length - 1), p });
+      const max = t === 'f' ? 2 : 16000;
+      for (let k = 0; k + 1 < s.p.length && p.length < max; k += 2) p.push(clamp(Math.round(+s.p[k] || 0), 0, PAD_W - 1), clamp(Math.round(+s.p[k + 1] || 0), 0, PAD_H - 1));
+      if (p.length) out.push({ t, c, w: clamp(Math.round(w) || 10, MIN_W, MAX_W), p });
     }
     return out;
   }
@@ -104,21 +115,28 @@
   }
   const defaults = () => normalize(DEFAULTS);
 
-  // ---------- drawing codec: strokes <-> a short base64url text ----------
-  // Each stroke: ink (5 bits), width (2), point count (13), then x (10) and y (10) per point.
+  // ---------- drawing codec: steps <-> a short base64url text ----------
+  // Version 2. Each step: type (2 bits: 0 brush, 1 eraser, 2 bucket), then
+  //   brush:  color (24), size (6), point count (13), x (10) y (10) per point
+  //   eraser: size (6), point count (13), points
+  //   bucket: color (24), x (10), y (10)
+  // Version 1 (older links): palette index (5), size index (2), count (13), points.
   function encodeStrokes(strokes) {
     const bytes = [];
     let acc = 0, bits = 0;
     const put = (v, n) => {
       for (let k = n - 1; k >= 0; k--) {
-        acc = (acc << 1) | ((v >> k) & 1); bits++;
+        acc = (acc << 1) | (Math.floor(v / Math.pow(2, k)) & 1); bits++;
         if (bits === 8) { bytes.push(acc); acc = 0; bits = 0; }
       }
     };
-    put(1, 4);                                  // format version
+    put(2, 4);
     for (const s of strokes) {
+      if (s.t === 'f') { put(2, 2); put(parseInt(s.c.slice(1), 16), 24); put(s.p[0], 10); put(s.p[1], 10); continue; }
       const n = Math.min(8191, s.p.length / 2);
-      put(s.i, 5); put(s.w, 2); put(n, 13);
+      put(s.t === 'e' ? 1 : 0, 2);
+      if (s.t === 's') put(parseInt(s.c.slice(1), 16), 24);
+      put(s.w - MIN_W, 6); put(n, 13);
       for (let k = 0; k < n; k++) { put(s.p[2 * k], 10); put(s.p[2 * k + 1], 10); }
     }
     if (bits) put(0, 8 - bits);
@@ -134,17 +152,34 @@
       const total = bin.length * 8;
       const get = n => {
         let v = 0;
-        for (let k = 0; k < n; k++) { const byte = bin.charCodeAt(pos >> 3); v = (v << 1) | ((byte >> (7 - (pos & 7))) & 1); pos++; }
+        for (let k = 0; k < n; k++) { const byte = bin.charCodeAt(pos >> 3); v = v * 2 + ((byte >> (7 - (pos & 7))) & 1); pos++; }
         return v;
       };
-      if (get(4) !== 1) return [];
-      const out = [];
-      while (total - pos >= 20) {
-        const i = get(5), w = get(2), n = get(13);
-        if (!n || total - pos < n * 20) break;
-        const p = [];
-        for (let k = 0; k < n; k++) p.push(get(10), get(10));
-        out.push({ i, w, p });
+      const hex = v => '#' + v.toString(16).padStart(6, '0');
+      const ver = get(4), out = [];
+      if (ver === 1) {
+        while (total - pos >= 20) {
+          const i = get(5), w = get(2), n = get(13);
+          if (!n || total - pos < n * 20) break;
+          const p = [];
+          for (let k = 0; k < n; k++) p.push(get(10), get(10));
+          out.push({ i, w, p });
+        }
+      } else if (ver === 2) {
+        while (total - pos >= 8) {
+          const t = get(2);
+          if (t === 2) {
+            if (total - pos < 44) break;
+            out.push({ t: 'f', c: hex(get(24)), w: 10, p: [get(10), get(10)] });
+          } else if (t <= 1) {
+            if (total - pos < (t ? 19 : 43)) break;
+            const c = t ? '#000000' : hex(get(24)), w = get(6) + MIN_W, n = get(13);
+            if (!n || total - pos < n * 20) break;
+            const p = [];
+            for (let k = 0; k < n; k++) p.push(get(10), get(10));
+            out.push({ t: t ? 'e' : 's', c, w, p });
+          } else break;
+        }
       }
       return cleanStrokes(out);
     } catch (e) { return []; }
@@ -159,10 +194,12 @@
     while (stack.length) {
       const [a, b] = stack.pop();
       const ax = p[2 * a], ay = p[2 * a + 1], bx = p[2 * b], by = p[2 * b + 1];
-      const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1;
+      const dx = bx - ax, dy = by - ay, len = Math.hypot(dx, dy);
       let best = -1, far = 0;
       for (let k = a + 1; k < b; k++) {
-        const d = Math.abs(dy * p[2 * k] - dx * p[2 * k + 1] + bx * ay - by * ax) / len;
+        // a closed loop starts and ends at the same spot: measure from that spot instead of a line
+        const d = len < 1 ? Math.hypot(p[2 * k] - ax, p[2 * k + 1] - ay)
+          : Math.abs(dy * p[2 * k] - dx * p[2 * k + 1] + bx * ay - by * ax) / len;
         if (d > far) { far = d; best = k; }
       }
       if (far > eps && best > 0) { keep[best] = 1; stack.push([a, best], [best, b]); }
@@ -172,15 +209,16 @@
     return out;
   }
 
-  // Paint strokes onto a 2D context sized PAD_W×PAD_H (or scaled).
+  // Paint one brush or eraser stroke onto a 2D context (in pad pixels).
   function paintStroke(g, s) {
+    if (s.t === 'f') return;
     const p = s.p;
     g.save();
-    g.globalCompositeOperation = s.i === ERASER ? 'destination-out' : 'source-over';
-    g.strokeStyle = g.fillStyle = s.i === ERASER ? '#000' : INKS[s.i];
-    g.lineWidth = WIDTHS[s.w]; g.lineCap = 'round'; g.lineJoin = 'round';
+    g.globalCompositeOperation = s.t === 'e' ? 'destination-out' : 'source-over';
+    g.strokeStyle = g.fillStyle = s.t === 'e' ? '#000' : s.c;
+    g.lineWidth = s.w; g.lineCap = 'round'; g.lineJoin = 'round';
     if (p.length <= 2) {
-      g.beginPath(); g.arc(p[0], p[1], WIDTHS[s.w] / 2, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.arc(p[0], p[1], s.w / 2, 0, Math.PI * 2); g.fill();
     } else {
       g.beginPath(); g.moveTo(p[0], p[1]);
       for (let k = 2; k < p.length - 2; k += 2) {
@@ -192,16 +230,76 @@
     }
     g.restore();
   }
+
+  // Paint bucket on a PAD_W×PAD_H context: fills the area of similar color around (x, y).
+  // The edge is grown by 2px and painted *under* soft line edges, so no pale halo is left.
+  function floodFill(g, x, y, color) {
+    const W = PAD_W, H = PAD_H, img = g.getImageData(0, 0, W, H), d = img.data;
+    const n = parseInt(color.slice(1), 16), fr = n >> 16, fg = (n >> 8) & 255, fb = n & 255;
+    const i0 = (y * W + x) * 4, sr = d[i0], sg = d[i0 + 1], sb = d[i0 + 2], sa = d[i0 + 3];
+    if (sa > 250 && Math.abs(sr - fr) + Math.abs(sg - fg) + Math.abs(sb - fb) < 6) return 0;   // already that color
+    const TOL = 70;
+    const same = i => {
+      const a = d[i + 3];
+      if (sa < 20) return a < 90;                      // empty paper: spread over empty and very faint pixels
+      return Math.abs(a - sa) + (Math.abs(d[i] - sr) + Math.abs(d[i + 1] - sg) + Math.abs(d[i + 2] - sb)) * Math.min(1, a / 255) < TOL;
+    };
+    const mask = new Uint8Array(W * H), stack = [x, y];
+    let count = 0;
+    while (stack.length) {
+      const py = stack.pop(), px0 = stack.pop();
+      let px = px0;
+      while (px > 0 && !mask[py * W + px - 1] && same((py * W + px - 1) * 4)) px--;
+      let up = false, down = false;
+      for (; px < W && !mask[py * W + px] && same((py * W + px) * 4); px++) {
+        mask[py * W + px] = 1; count++;
+        if (py > 0) { const m = !mask[(py - 1) * W + px] && same(((py - 1) * W + px) * 4); if (m && !up) stack.push(px, py - 1); up = m; }
+        if (py < H - 1) { const m = !mask[(py + 1) * W + px] && same(((py + 1) * W + px) * 4); if (m && !down) stack.push(px, py + 1); down = m; }
+      }
+    }
+    // grow the filled area by 2px
+    let ring = mask;
+    for (let step = 0; step < 2; step++) {
+      const next = ring.slice();
+      for (let py = 0; py < H; py++) for (let px = 0; px < W; px++) {
+        const k = py * W + px;
+        if (ring[k]) continue;
+        if ((px > 0 && ring[k - 1]) || (px < W - 1 && ring[k + 1]) || (py > 0 && ring[k - W]) || (py < H - 1 && ring[k + W])) next[k] = 2;
+      }
+      ring = next;
+    }
+    for (let k = 0; k < W * H; k++) {
+      const i = k * 4;
+      if (mask[k] === 1) { d[i] = fr; d[i + 1] = fg; d[i + 2] = fb; d[i + 3] = 255; }
+      else if (ring[k] === 2) {                         // paint underneath what's already there
+        const a = d[i + 3] / 255;
+        d[i] = Math.round(d[i] * a + fr * (1 - a)); d[i + 1] = Math.round(d[i + 1] * a + fg * (1 - a)); d[i + 2] = Math.round(d[i + 2] * a + fb * (1 - a)); d[i + 3] = 255;
+      }
+    }
+    g.putImageData(img, 0, 0);
+    return count;
+  }
+
+  // Paint a whole drawing. Works on any context, even a scaled one: bucket fills need real pixels,
+  // so drawings with fills are painted on a full-size sheet first.
+  let sheet = null;
   function paintStrokes(g, strokes) {
     g.clearRect(0, 0, PAD_W, PAD_H);
-    for (const s of strokes) paintStroke(g, s);
+    const direct = !strokes.some(s => s.t === 'f') && g.getTransform && g.getTransform().isIdentity;
+    if (direct) { for (const s of strokes) paintStroke(g, s); return; }
+    if (!sheet) { sheet = document.createElement('canvas'); sheet.width = PAD_W; sheet.height = PAD_H; }
+    const sg = sheet.getContext('2d', { willReadFrequently: true });
+    sg.setTransform(1, 0, 0, 1, 0, 0);
+    sg.clearRect(0, 0, PAD_W, PAD_H);
+    for (const s of strokes) { if (s.t === 'f') floodFill(sg, s.p[0], s.p[1], s.c); else paintStroke(sg, s); }
+    g.drawImage(sheet, 0, 0, PAD_W, PAD_H);
   }
   // Where the drawing is (in view coordinates), to place a flame if the maker didn't.
   function strokesBox(strokes) {
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
     for (const s of strokes) {
-      if (s.i === ERASER) continue;
-      const r = WIDTHS[s.w] / 2;
+      if (s.t !== 's') continue;
+      const r = s.w / 2;
       for (let k = 0; k < s.p.length; k += 2) {
         x0 = Math.min(x0, s.p[k] - r); x1 = Math.max(x1, s.p[k] + r);
         y0 = Math.min(y0, s.p[k + 1] - r); y1 = Math.max(y1, s.p[k + 1] + r);
@@ -215,7 +313,8 @@
     if (c.mode === 'create') return null;      // the SVG says where its candle is
     if (c.flames.length) return c.flames;
     const box = strokesBox(c.strokes);
-    return box ? [[Math.round((box.x0 + box.x1) / 2), Math.max(30, Math.round(box.y0 - 4))]] : [[200, 190]];
+    if (box) return [[Math.round((box.x0 + box.x1) / 2), Math.max(30, Math.round(box.y0 - 4))]];
+    return c.drawId ? [[200, 190]] : [];          // blank paper: no flame yet
   }
 
   // ---------- cloud: hand drawings too big for the link go to Supabase Storage ----------
@@ -523,7 +622,7 @@
 
   window.Krathong = {
     fromRow, fetchRiver, countSince, release, makeSprite, SPRITE_W, SPRITE_H,
-    BASES, LEAVES, LEAF_COLORS, FLOWERS, CENTERS, CANDLES, INKS, ERASER, WIDTHS,
+    BASES, LEAVES, LEAF_COLORS, FLOWERS, CENTERS, CANDLES, INKS, MIN_W, MAX_W, floodFill,
     PAD_W, PAD_H, VIEW_W, VIEW_H, WL, MAX_NAME, MAX_MSG, MAX_FLAMES,
     defaults, normalize, render, flamesFor, strokesBox,
     encodeStrokes, decodeStrokes, simplify, paintStroke, paintStrokes,

@@ -37,7 +37,7 @@
         <path d="M60,214 Q200,262 340,214" />
         <path d="M200,176 C186,150 190,112 200,92 C210,112 214,150 200,176" />
         <line class="water" x1="0" y1="252" x2="400" y2="252" />
-        <text x="200" y="272">water line: draw above it</text>
+        <text x="200" y="272">water line · draw above it (the paper stays here, only your drawing floats)</text>
       </svg>
       <div class="flames" id="flames"></div>
     </div>
@@ -71,6 +71,51 @@
     </div>
   </section>
 </main>
+
+<!-- the drawing studio: paper in the middle, tools around it -->
+<div class="paint-ui" id="paintUI">
+  <div class="p-top">
+    <button type="button" class="p-pill" id="pToCreate" title="Build it from parts instead">🧩 <span>Create instead</span></button>
+    <div class="p-tools" role="toolbar" aria-label="Tools">
+      <button type="button" class="p-tool" data-tool="brush" title="Brush (B)" aria-label="Brush">🖌️</button>
+      <button type="button" class="p-tool" data-tool="fill" title="Paint bucket (G)" aria-label="Paint bucket">🪣</button>
+      <button type="button" class="p-tool" data-tool="eraser" title="Eraser (E)" aria-label="Eraser">🧽</button>
+      <button type="button" class="p-tool" data-tool="flame" title="Candle flame (C)" aria-label="Candle flame">🕯️</button>
+    </div>
+    <button type="button" class="p-color" id="pColor" title="Color" aria-label="Color" aria-haspopup="dialog"></button>
+  </div>
+
+  <div class="p-side" aria-label="Brush size and history">
+    <div class="p-slider" id="pSize" role="slider" aria-label="Brush size" aria-valuemin="2" aria-valuemax="65" tabindex="0"><div class="p-fill"></div><div class="p-thumb"></div></div>
+    <div class="p-size-dot" id="pSizeDot" aria-hidden="true"><span></span></div>
+    <button type="button" class="p-round" id="pUndo" title="Undo (two-finger tap, Ctrl+Z)" aria-label="Undo">↩︎</button>
+    <button type="button" class="p-round" id="pRedo" title="Redo (three-finger tap, Ctrl+Shift+Z)" aria-label="Redo">↪︎</button>
+  </div>
+
+  <div class="p-pop hidden" id="pPop" role="dialog" aria-label="Choose a color">
+    <div class="p-pop-head"><span>Color</span><label class="p-custom" title="Any color">🎨 Any color<input type="color" id="pPick"></label></div>
+    <div class="p-swatches" id="pSwatches"></div>
+    <div class="p-pop-sub">Recent</div>
+    <div class="p-swatches recent" id="pRecent"></div>
+  </div>
+
+  <div class="p-bottom">
+    <button type="button" class="p-pill" id="pWords">✍️ <span>Name &amp; message</span></button>
+    <button type="button" class="p-round" id="pGuide" title="Water line guide" aria-label="Water line guide">📐</button>
+    <button type="button" class="p-round" id="pClear" title="Clear the paper" aria-label="Clear the paper">🗑️</button>
+    <span class="p-gap"></span>
+    <button type="button" class="p-pill ghost" id="pRiver">🌊 <span>River</span></button>
+    <button type="button" class="p-release" id="pRelease">🪷 Release</button>
+  </div>
+
+  <div class="p-sheet hidden" id="pSheet" role="dialog" aria-label="Name and message">
+    <label class="for-row">🪷 Name <input id="pName" type="text" maxlength="30" placeholder="shown on the river (optional)" autocomplete="off" enterkeyhint="next"></label>
+    <input class="text-in" id="pMsg" type="text" maxlength="80" placeholder="Message on the river (optional)" autocomplete="off" enterkeyhint="done">
+    <p class="note">Everyone on the river can read these. Your wish stays secret.</p>
+    <button type="button" id="pSheetDone">Done</button>
+  </div>
+  <div class="p-tip" id="pTip"></div>
+</div>
 
 <div class="overlay hidden" id="roles">
   <div class="moon-badge" aria-hidden="true">🌕</div>

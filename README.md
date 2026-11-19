@@ -11,8 +11,12 @@ across the water with their candles lit. Tap one to see whose it is and their me
 (the page checks every 20 seconds), and the panel shows how many were released today.
 
 - **🪷 Make a krathong**, then choose how:
-  - **✏️ Draw your krathong:** draw it on a pad (16 colors, 4 sizes, eraser, undo, a guide with the water line).
-    The **🕯️ Candle** tool puts up to 3 flames where you tap.
+  - **✏️ Draw your krathong:** a drawing studio with a sheet of paper in the middle, like a sketching app:
+    - 🖌️ brush, 🪣 paint bucket (fills a closed shape cleanly, right up to the lines), 🧽 eraser, 🕯️ candle (tap where up to 3 flames burn)
+    - color picker: 16 colors, any color, and your recent colors
+    - size slider, undo and redo (two-finger tap = undo, three-finger tap = redo; Ctrl+Z / Ctrl+Shift+Z on a computer)
+    - keyboard: B brush, G bucket, E eraser, C candle, [ and ] for size
+    - a guide with the water line. The paper stays behind: only the drawing floats.
   - **🧩 Create your krathong:** base (banana trunk, bread, coconut, lotus), folded leaves and color, flowers,
     the middle (lotus bud, flower cone, big marigold), candle color and 0–3 incense sticks.
   - **Name** (optional) and a **message** are shown on the river for everyone.
