@@ -485,9 +485,33 @@
   ['gesturestart', 'gesturechange', 'gestureend'].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));
   document.addEventListener('dblclick', e => e.preventDefault(), { passive: false });
   document.addEventListener('touchmove', e => {
-    if (e.target.type === 'range' || (e.target.closest && e.target.closest('.scroll-ok'))) return;
+    // Leave controls alone: blocking the tiny wobble of an Apple Pencil tap on a button stops iPad
+    // from sending the click, so the tools couldn't be changed with a pen.
+    if (e.target.type === 'range' || (e.target.closest && e.target.closest('.scroll-ok, button, label, input, a, .p-slider'))) return;
     e.preventDefault();
   }, { passive: false });
+
+  // Pens and styluses: if a pen tap on a button doesn't turn into a click, press the button ourselves.
+  let penTap = null;
+  const tappable = el => el && el.closest && el.closest('button, label, input, a');
+  addEventListener('pointerdown', e => {
+    penTap = e.pointerType === 'pen' && tappable(e.target) ? { el: tappable(e.target), x: e.clientX, y: e.clientY, t: performance.now() } : null;
+  }, true);
+  addEventListener('pointerup', e => {
+    if (e.pointerType !== 'pen' || !penTap) return;
+    const tap = penTap; penTap = null;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    if (tappable(el) !== tap.el || Math.hypot(e.clientX - tap.x, e.clientY - tap.y) > 24 || performance.now() - tap.t > 900) return;
+    let clicked = false;
+    const mark = () => { clicked = true; };
+    tap.el.addEventListener('click', mark, { capture: true, once: true });
+    setTimeout(() => {
+      tap.el.removeEventListener('click', mark, true);
+      if (clicked || tap.el.disabled) return;
+      if (tap.el.matches('input:not([type=color]):not([type=file])')) tap.el.focus();
+      else tap.el.click();
+    }, 80);
+  }, true);
   document.addEventListener('contextmenu', e => { if (e.target.closest('.k-wrap')) e.preventDefault(); });
 
   // ---------- modes ----------
