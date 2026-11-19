@@ -11,7 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Pacifico&family=Nunito:wght@600;800&family=Mitr:wght@400&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=2">
+<link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
 <canvas id="river" aria-hidden="true"></canvas>
@@ -29,7 +29,9 @@
       <div class="k-reflect" id="kRef" aria-hidden="true">
         <svg class="k-svg" id="kSvgR" viewBox="0 0 400 300"></svg>
         <canvas class="k-pad" id="kPadR" width="800" height="600"></canvas>
+        <img class="k-photo hidden" id="kPhotoR" alt="">
       </div>
+      <img class="k-photo hidden" id="kPhoto" alt="">
       <svg class="k-svg" id="kSvg" viewBox="0 0 400 300" role="img" aria-label="Your krathong"></svg>
       <canvas class="k-pad" id="kPad" width="800" height="600" aria-label="Drawing pad"></canvas>
       <svg class="k-guide hidden" id="kGuide" viewBox="0 0 400 300" aria-hidden="true">
@@ -81,6 +83,7 @@
       <button type="button" class="p-tool" data-tool="fill" title="Paint bucket (G)" aria-label="Paint bucket">🪣</button>
       <button type="button" class="p-tool" data-tool="eraser" title="Eraser (E)" aria-label="Eraser">🧽</button>
       <button type="button" class="p-tool" data-tool="flame" title="Candle flame (C)" aria-label="Candle flame">🕯️</button>
+      <button type="button" class="p-tool" data-tool="photo" title="Photo (P)" aria-label="Photo">📷</button>
     </div>
     <button type="button" class="p-color" id="pColor" title="Color" aria-label="Color" aria-haspopup="dialog"></button>
   </div>
@@ -98,6 +101,8 @@
     <div class="p-pop-sub">Recent</div>
     <div class="p-swatches recent" id="pRecent"></div>
   </div>
+
+  <div class="p-pop p-photo hidden" id="pPhoto" role="dialog" aria-label="Photo"></div>
 
   <div class="p-bottom">
     <button type="button" class="p-pill" id="pWords">✍️ <span>Name &amp; message</span></button>
@@ -150,8 +155,8 @@
 <div class="tag hidden" id="tag" role="status"></div>
 <div class="toast hidden" id="toast" role="status"></div>
 
-<script src="krathong.js?v=2"></script>
-<script src="river.js?v=2"></script>
-<script src="builder.js?v=2"></script>
+<script src="krathong.js?v=3"></script>
+<script src="river.js?v=3"></script>
+<script src="builder.js?v=3"></script>
 </body>
 </html>

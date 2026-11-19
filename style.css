@@ -324,8 +324,9 @@ body.mode-paint .k-wrap {
   width: min(calc(100vw - 160px), calc((100vh - 176px) * 4 / 3), 1200px);
 }
 @supports (height: 1svh) { body.mode-paint .k-wrap { width: min(calc(100vw - 160px), calc((100svh - 176px) * 4 / 3), 1200px); } }
-body.mode-paint .k-wrap.is-draw .k-pad {
-  outline: none; border-radius: 6px; cursor: crosshair;
+body.mode-paint .k-wrap.is-draw .k-pad { outline: none; border-radius: 6px; cursor: crosshair; background: none; }
+body.mode-paint .k-wrap.is-draw .k-body::before {
+  content: ""; position: absolute; inset: 0; z-index: 0; border-radius: 6px;
   background-color: #fbf7ee;
   background-image:
     radial-gradient(ellipse at 50% 45%, rgba(255,255,255,0) 55%, rgba(120, 95, 60, .10)),
@@ -429,3 +430,39 @@ body.mode-paint.mouse-cursor .p-cursor.on { display: block; }
   .p-slider { height: 30vh; }
   .p-top button.p-pill span { display: none; }
 }
+
+
+/* ---------- your photo, behind or in front of the krathong ---------- */
+.k-reflect { z-index: 0; }
+.k-svg, .k-pad { z-index: 2; }
+.k-guide { z-index: 4; }
+.flames { z-index: 5; }
+.k-photo {
+  position: absolute; z-index: 1; height: auto; max-width: none;
+  transform: translate(-50%, -50%); pointer-events: none; user-select: none;
+}
+.k-photo.front { z-index: 3; }
+.k-photo.round { border-radius: 12%; }
+.k-photo.circle, .k-photo.heart { aspect-ratio: 1; object-fit: cover; }
+.k-photo.circle { border-radius: 50%; }
+.k-photo.heart {
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M50 92 C-15 50 10 -8 50 26 C90 -8 115 50 50 92 Z'/></svg>") center / 100% 100% no-repeat;
+  mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><path d='M50 92 C-15 50 10 -8 50 26 C90 -8 115 50 50 92 Z'/></svg>") center / 100% 100% no-repeat;
+}
+body.mode-build .k-wrap.photo-move { cursor: grab; }
+body.mode-build .k-wrap.photo-move .k-photo { outline: 2px dashed rgba(255, 207, 90, .9); outline-offset: 3px; }
+body.mode-build .k-wrap.photo-move .k-photo.circle { outline: none; box-shadow: 0 0 0 3px rgba(255, 207, 90, .9); }
+
+label.photo-add {
+  display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;
+  padding: 14px; border-radius: 16px; border: 2px dashed rgba(255, 207, 90, .6);
+  background: rgba(255, 207, 90, .08); color: var(--accent); font-weight: 800; font-size: 16px;
+}
+label.photo-add .em { font-size: 22px; }
+.photo-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.photo-thumb { width: 52px; height: 52px; border-radius: 12px; object-fit: cover; border: 2px solid var(--accent); }
+label.chip { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font: 800 14px "Nunito", sans-serif; padding: 8px 12px; border-radius: 999px; background: rgba(255,255,255,.1); color: var(--text); border: 2px solid transparent; }
+.photo-size { width: 100%; accent-color: var(--accent); touch-action: pan-x; }
+.p-photo { width: min(360px, calc(100vw - 24px)); max-height: calc(100vh - 160px); overflow-y: auto; }
+.p-photo .group h3 { color: var(--muted); }
+.p-photo .chips { gap: 6px; }

@@ -36,6 +36,7 @@
         { key: 'candle', title: 'Candle color', options: opts(K.CANDLES, c => ({ sw: c.c })) },
         { key: 'incense', title: 'Incense sticks', options: [0, 1, 2, 3].map(n => ({ v: n, label: n ? String(n) : 'None', emoji: n ? '🥢' : '' })) }
       ] },
+      { id: 'photo', label: '📷 Photo', groups: [{ special: 'photo' }] },
       WORDS
     ],
     draw: [WORDS]        // Draw mode uses the studio (paintUI) instead of tabs
@@ -76,7 +77,7 @@
   const tool = { kind: 'brush', color: '#3d9a45', size: 10, guide: true, recent: [] };
   try {
     const t = JSON.parse(localStorage.getItem('krathong-tool-v2')) || {};
-    if (['brush', 'eraser', 'fill', 'flame'].includes(t.kind)) tool.kind = t.kind;
+    if (['brush', 'eraser', 'fill', 'flame', 'photo'].includes(t.kind)) tool.kind = t.kind;
     if (/^#[0-9a-f]{6}$/.test(t.color)) tool.color = t.color;
     if (t.size >= K.MIN_W && t.size <= K.MAX_W) tool.size = Math.round(t.size);
     if (typeof t.guide === 'boolean') tool.guide = t.guide;
@@ -90,7 +91,8 @@
     document.body.classList.toggle('mode-paint', on);
     $('kGuide').classList.toggle('hidden', !(tool.guide && on));
     if (on) renderStudio();
-    else { $('pPop').classList.add('hidden'); $('pSheet').classList.add('hidden'); }
+    else { $('pPop').classList.add('hidden'); $('pSheet').classList.add('hidden'); $('pPhoto').classList.add('hidden'); }
+    syncPhotoMove();
   }
   const showGuide = syncPaint;
 
@@ -109,8 +111,10 @@
     const t = TABS[cfg.mode].find(x => x.id === tab) || TABS[cfg.mode][0];
     bodyEl.innerHTML = t.groups.map(g => {
       if (g.special === 'words') return wordsHTML();
+      if (g.special === 'photo') return photoHTML();
       return `<div class="group"><h3>${g.title}</h3><div class="chips">${g.options.map(o => chipHTML(g.key, o)).join('')}</div></div>`;
     }).join('');
+    syncPhotoMove();
   }
 
   bodyEl.addEventListener('click', e => {
@@ -141,7 +145,8 @@
     brush: 'Brush: draw with your finger, pen or mouse',
     fill: 'Paint bucket: tap inside a closed shape to fill it',
     eraser: 'Eraser: rub out parts of your drawing',
-    flame: `Candle: tap where a flame should burn (up to ${K.MAX_FLAMES}), tap it again to remove`
+    flame: `Candle: tap where a flame should burn (up to ${K.MAX_FLAMES}), tap it again to remove`,
+    photo: 'Photo: drag it to move it, pinch or use the slider to resize'
   };
   let tipTimer = 0;
   function tip(text) {
@@ -150,12 +155,14 @@
   }
   function setTool(k, quiet) {
     tool.kind = k; saveTool(); renderStudio();
-    if (!quiet) tip(TIPS[k]);
+    $('pPhoto').classList.toggle('hidden', k !== 'photo');
+    if (k === 'photo') { $('pPop').classList.add('hidden'); renderPhotoPanel(); }
+    if (!quiet && (k !== 'photo' || cfg.photo)) tip(TIPS[k]);
   }
   function setColor(c, keepTool) {
     tool.color = c;
     tool.recent = [c].concat(tool.recent.filter(x => x !== c)).slice(0, 8);
-    if (!keepTool && (tool.kind === 'eraser' || tool.kind === 'flame')) tool.kind = 'brush';
+    if (!keepTool && (tool.kind === 'eraser' || tool.kind === 'flame' || tool.kind === 'photo')) { tool.kind = 'brush'; $('pPhoto').classList.add('hidden'); }
     saveTool(); renderStudio();
   }
   function renderStudio() {
@@ -169,15 +176,17 @@
     $('pRecent').innerHTML = tool.recent.map(sw).join('');
     $('pPick').value = tool.color;
     renderSize();
+    syncPhotoMove();
   }
   studio.querySelector('.p-tools').addEventListener('click', e => { const b = e.target.closest('.p-tool'); if (b) setTool(b.dataset.tool); });
-  $('pColor').addEventListener('click', () => { $('pSheet').classList.add('hidden'); $('pPop').classList.toggle('hidden'); });
+  $('pColor').addEventListener('click', () => { $('pSheet').classList.add('hidden'); $('pPhoto').classList.add('hidden'); $('pPop').classList.toggle('hidden'); });
   $('pPop').addEventListener('click', e => { const b = e.target.closest('[data-color]'); if (b) { setColor(b.dataset.color); $('pPop').classList.add('hidden'); } });
   $('pPick').addEventListener('input', e => setColor(e.target.value.toLowerCase()));
   // close pop-ups when drawing or tapping elsewhere
   addEventListener('pointerdown', e => {
     if (!painting()) return;
     if (!e.target.closest('#pPop, #pColor')) $('pPop').classList.add('hidden');
+    if (!e.target.closest('#pPhoto, [data-tool=photo], .k-wrap')) $('pPhoto').classList.add('hidden');
     if (!e.target.closest('#pSheet, #pWords')) $('pSheet').classList.add('hidden');
   }, true);
 
@@ -199,7 +208,7 @@
     let t = across ? (e.clientX - r.left) / r.width : 1 - (e.clientY - r.top) / r.height;
     t = Math.max(0, Math.min(1, t));
     tool.size = Math.round(K.MIN_W + t * t * (K.MAX_W - K.MIN_W));
-    if (tool.kind === 'flame' || tool.kind === 'fill') tool.kind = 'brush';
+    if (tool.kind === 'flame' || tool.kind === 'fill' || tool.kind === 'photo') { tool.kind = 'brush'; $('pPhoto').classList.add('hidden'); }
     renderStudio();
   }
   let sizing = false;
@@ -248,7 +257,7 @@
     if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); e.shiftKey ? redoStep() : undo(); }
     else if ((e.ctrlKey || e.metaKey) && k === 'y') { e.preventDefault(); redoStep(); }
     else if (!e.ctrlKey && !e.metaKey) {
-      const t = { b: 'brush', g: 'fill', e: 'eraser', c: 'flame' }[k];
+      const t = { b: 'brush', g: 'fill', e: 'eraser', c: 'flame', p: 'photo' }[k];
       if (t) setTool(t);
       else if (k === '[' || k === ']') { tool.size = Math.max(K.MIN_W, Math.min(K.MAX_W, tool.size + (k === ']' ? 3 : -3))); saveTool(); renderStudio(); }
     }
@@ -360,6 +369,139 @@
   $('pRiver').addEventListener('click', () => toRiver());
   $('pRelease').addEventListener('click', () => $('releaseBtn').click());
 
+  // ---------- your photo (both ways of making a krathong) ----------
+  const wrapEl = $('kview');
+  const pchip = (k, o, cur) => `<button type="button" class="chip" data-${k}="${o.v}" aria-pressed="${o.v === cur}"><span class="em">${o.emoji}</span>${esc(o.label)}</button>`;
+  function photoHTML() {
+    const p = cfg.photo;
+    const add = '<input type="file" class="photo-file" accept="image/*" hidden>';
+    if (!p) {
+      return `<div class="group"><h3>Your photo</h3><label class="photo-add">${add}<span class="em">📷</span>Add a photo</label>` +
+        `<p class="note">A face, a pet, a place you love… put it behind or in front of your krathong. Pictures with a see-through background (PNG) work great.</p></div>`;
+    }
+    return `<div class="group"><h3>Your photo</h3><div class="photo-row"><img class="photo-thumb" src="${esc(K.photoSrc(p))}" alt="Your photo">` +
+      `<label class="chip">${add}🔄 Change</label><button type="button" class="chip" data-pact="remove">🗑️ Remove</button></div></div>` +
+      `<div class="group"><h3>Where</h3><div class="chips">${opts(K.PHOTO_LAYERS).map(o => pchip('player', o, p.layer)).join('')}</div></div>` +
+      `<div class="group"><h3>Frame</h3><div class="chips">${opts(K.PHOTO_SHAPES).map(o => pchip('pshape', o, p.shape)).join('')}</div></div>` +
+      `<div class="group"><h3>Size</h3><input type="range" class="photo-size" min="30" max="520" value="${Math.round(p.w)}" aria-label="Photo size">` +
+      `<p class="note">Drag the photo on the krathong to move it. Pinch or scroll to resize.</p></div>`;
+  }
+  function renderPhotoPanel() { $('pPhoto').innerHTML = photoHTML(); }
+  function refreshPhotoUI() {
+    if (cfg.mode === 'create' && tab === 'photo') renderBody();
+    if (!$('pPhoto').classList.contains('hidden')) renderPhotoPanel();
+    syncPhotoMove();
+  }
+  const photoMoving = () => document.body.classList.contains('mode-build') && !!cfg.photo &&
+    (cfg.mode === 'create' ? tab === 'photo' : tool.kind === 'photo');
+  function syncPhotoMove() { wrapEl.classList.toggle('photo-move', photoMoving()); }
+  function photoChanged() { App.setPhoto(cfg.photo); save(); document.querySelectorAll('.photo-size').forEach(r => { r.value = Math.round(cfg.photo.w); }); }
+
+  // shrink the picture before keeping it: PNG if it has see-through parts, otherwise JPEG
+  function loadFile(file) {
+    return new Promise((res, rej) => {
+      const url = URL.createObjectURL(file), img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); res(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('not an image')); };
+      img.src = url;
+    });
+  }
+  async function preparePhoto(file) {
+    const img = await loadFile(file);
+    const W0 = img.naturalWidth, H0 = img.naturalHeight;
+    if (!W0 || !H0) throw new Error('empty image');
+    let scale = Math.min(1, 720 / Math.max(W0, H0));
+    const cv = document.createElement('canvas'), pg = cv.getContext('2d', { willReadFrequently: true });
+    const paint = sc => {
+      cv.width = Math.max(1, Math.round(W0 * sc)); cv.height = Math.max(1, Math.round(H0 * sc));
+      pg.clearRect(0, 0, cv.width, cv.height); pg.imageSmoothingQuality = 'high'; pg.drawImage(img, 0, 0, cv.width, cv.height);
+    };
+    paint(scale);
+    const d = pg.getImageData(0, 0, cv.width, cv.height).data;
+    let alpha = false;
+    for (let i = 3; i < d.length; i += 16) if (d[i] < 250) { alpha = true; break; }
+    let src = '';
+    if (alpha) {
+      for (let k = 0; k < 8; k++) { src = cv.toDataURL('image/png'); if (src.length < 620000) break; scale *= 0.8; paint(scale); }
+    } else {
+      for (const q of [0.86, 0.78, 0.68, 0.58, 0.48]) { src = cv.toDataURL('image/jpeg', q); if (src.length < 520000) break; }
+    }
+    if (!K.normalize({ photo: { src } }).photo) throw new Error('too big');
+    return { src, ar: cv.height / cv.width };
+  }
+  document.addEventListener('change', async e => {
+    if (!e.target.classList || !e.target.classList.contains('photo-file') || !e.target.files || !e.target.files[0]) return;
+    const file = e.target.files[0];
+    e.target.value = '';
+    try {
+      const { src, ar } = await preparePhoto(file);
+      cfg.photo = cfg.photo
+        ? Object.assign({}, cfg.photo, { src, id: '', ar })
+        : { src, id: '', ar, x: 200, y: 110, w: 170, layer: 'back', shape: 'none' };
+      update();
+      if (cfg.mode === 'draw') setTool('photo', true);
+      refreshPhotoUI();
+      toast('📷 Photo added! Drag it to move it.');
+    } catch (err) {
+      console.warn(err);
+      toast('Couldn\'t use that picture. Try another one.');
+    }
+  });
+  document.addEventListener('click', e => {
+    const t = e.target.closest && e.target.closest('[data-pact], [data-player], [data-pshape]');
+    if (!t || !cfg.photo) return;
+    if (t.dataset.pact === 'remove') cfg.photo = null;
+    else if (t.dataset.player) cfg.photo.layer = t.dataset.player;
+    else cfg.photo.shape = t.dataset.pshape;
+    update(); refreshPhotoUI();
+  });
+  document.addEventListener('input', e => {
+    if (!e.target.classList || !e.target.classList.contains('photo-size') || !cfg.photo) return;
+    cfg.photo.w = +e.target.value; App.setPhoto(cfg.photo); save();
+  });
+  // move with one finger / pen / mouse, pinch with two fingers, scroll wheel to resize
+  const grips = new Map();
+  let pdrag = null;
+  wrapEl.addEventListener('pointerdown', e => {
+    if (!photoMoving()) return;
+    e.preventDefault(); e.stopPropagation();           // don't draw while moving the photo
+    grips.set(e.pointerId, [e.clientX, e.clientY]);
+    try { wrapEl.setPointerCapture(e.pointerId); } catch (err) {}
+    const k = K.VIEW_W / wrapEl.getBoundingClientRect().width;
+    const pts = [...grips.values()];
+    pdrag = pts.length >= 2
+      ? { pinch: true, d0: Math.hypot(pts[0][0] - pts[1][0], pts[0][1] - pts[1][1]) || 1, w0: cfg.photo.w }
+      : { pinch: false, sx: e.clientX, sy: e.clientY, x: cfg.photo.x, y: cfg.photo.y, k };
+  }, true);
+  wrapEl.addEventListener('pointermove', e => {
+    if (!pdrag || !grips.has(e.pointerId) || !cfg.photo) return;
+    grips.set(e.pointerId, [e.clientX, e.clientY]);
+    if (pdrag.pinch) {
+      const pts = [...grips.values()];
+      if (pts.length < 2) return;
+      cfg.photo.w = Math.max(30, Math.min(520, pdrag.w0 * Math.hypot(pts[0][0] - pts[1][0], pts[0][1] - pts[1][1]) / pdrag.d0));
+    } else {
+      cfg.photo.x = Math.max(-150, Math.min(550, pdrag.x + (e.clientX - pdrag.sx) * pdrag.k));
+      cfg.photo.y = Math.max(-150, Math.min(450, pdrag.y + (e.clientY - pdrag.sy) * pdrag.k));
+    }
+    photoChanged();
+  }, true);
+  const dropGrip = e => {
+    if (!grips.delete(e.pointerId)) return;
+    if (!grips.size) { pdrag = null; save(); }
+    else if (pdrag && pdrag.pinch) {      // one finger left: keep moving from here
+      const [x, y] = [...grips.values()][0];
+      pdrag = { pinch: false, sx: x, sy: y, x: cfg.photo.x, y: cfg.photo.y, k: K.VIEW_W / wrapEl.getBoundingClientRect().width };
+    }
+  };
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => wrapEl.addEventListener(t, dropGrip, true));
+  wrapEl.addEventListener('wheel', e => {
+    if (!photoMoving()) return;
+    e.preventDefault();
+    cfg.photo.w = Math.max(30, Math.min(520, cfg.photo.w * (e.deltaY < 0 ? 1.06 : 0.94)));
+    photoChanged();
+  }, { passive: false });
+
   // ---------- going between screens ----------
   function hideOverlays() { ['roles', 'howBox', 'start'].forEach(id => $(id).classList.add('hidden')); }
   function enterBuild(mode) {
@@ -387,7 +529,7 @@
   $('howBack').addEventListener('click', () => { hideOverlays(); $('roles').classList.remove('hidden'); });
   // Release: light it, make a wish, swipe it away, and it joins everyone on the shared river.
   $('releaseBtn').addEventListener('click', () => {
-    if (cfg.mode === 'draw' && !cfg.strokes.length) { toast('Draw your krathong first ✏️'); return; }
+    if (cfg.mode === 'draw' && !cfg.strokes.length && !cfg.photo) { toast('Draw your krathong first ✏️'); return; }
     floatNow(Object.assign({}, cfg, { from: '' }), true, true);
   });
   $('editBtn').addEventListener('click', () => enterBuild());

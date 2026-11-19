@@ -20,6 +20,9 @@ across the water with their candles lit. Tap one to see whose it is and their me
       the bucket (a fill that reaches the edge of the paper), it shows while drawing but is see-through on the river.
   - **🧩 Create your krathong:** base (banana trunk, bread, coconut, lotus), folded leaves and color, flowers,
     the middle (lotus bud, flower cone, big marigold), candle color and 0–3 incense sticks.
+  - **📷 Photo** (both ways; the Photo tab in Create, the 📷 tool in the studio): add your own picture and put it
+    **behind** or **in front of** the krathong. Drag it to move it, pinch / scroll / use the slider to resize, and pick a
+    frame: as it is, rounded, circle or heart. Pictures with a see-through background (PNG) keep it.
   - **Name** (optional) and a **message** are shown on the river for everyone.
   - **🪷 Release krathong:** light the candle, type a secret wish (it never leaves the device), and swipe the krathong
     up. It floats away and joins everyone else's on the river, marked **★ yours** on your screen.
@@ -33,6 +36,8 @@ Supabase project `happybirthday-cake`:
 
 - Table **`krathongs`**: name, message, how it looks (`look` for created ones, `strokes` for drawings) and flame spots.
   Anyone can add a row and read the list. Nobody can change or delete rows from the site.
+- Bucket **`krathong-photos`**: the photos people add (JPEG, or PNG when the picture has see-through parts; shrunk to
+  at most 720px and under 500 KB on the device first). Where the photo sits is saved in the row's `photo` column.
 - Bucket **`krathong-drawings`**: only for very big drawings (over 40,000 characters of stroke code), stored as PNG.
 
 To remove a krathong (for example a rude name or message), delete its row in the Supabase dashboard → Table Editor → `krathongs`.

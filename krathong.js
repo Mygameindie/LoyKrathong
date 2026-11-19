@@ -56,7 +56,7 @@
     mode: 'create', name: '', from: '', msg: '',
     base: 'banana', leaf: 'pointed', leafc: 'green', flowers: ['marigold', 'rose', 'jasmine'],
     center: 'lotus', candle: 'gold', incense: 3,
-    strokes: [], drawId: '', flames: []
+    strokes: [], drawId: '', flames: [], photo: null
   };
   const MAX_NAME = 30, MAX_MSG = 80, MAX_FLAMES = 3;
   const has = (t, k) => typeof k === 'string' && Object.prototype.hasOwnProperty.call(t, k);
@@ -92,6 +92,36 @@
       .map(f => [clamp(Math.round(f[0]), 0, VIEW_W), clamp(Math.round(f[1]), 0, VIEW_H)]);
   }
 
+  // ---------- your own photo, behind or in front of the krathong ----------
+  // { src: local copy (maker's device only), id: cloud copy, x, y: center, w: width (view units),
+  //   ar: height / width, layer: 'back' | 'front', shape }
+  const PHOTO_SHAPES = {
+    none:   { label: 'As it is', emoji: '🖼️' },
+    round:  { label: 'Rounded',  emoji: '▢' },
+    circle: { label: 'Circle',   emoji: '⚪' },
+    heart:  { label: 'Heart',    emoji: '❤️' }
+  };
+  const PHOTO_LAYERS = {
+    back:  { label: 'Behind the krathong',   emoji: '⬇️' },
+    front: { label: 'In front of the krathong', emoji: '⬆️' }
+  };
+  const PHOTO_SRC_RE = /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/]+=*$/;
+  const PHOTO_ID_RE = /^[A-Za-z0-9_-]{20,40}\.(jpg|png)$/;
+  function cleanPhoto(p) {
+    if (!p || typeof p !== 'object') return null;
+    const src = typeof p.src === 'string' && p.src.length < 900000 && PHOTO_SRC_RE.test(p.src) ? p.src : '';
+    const id = typeof p.id === 'string' && PHOTO_ID_RE.test(p.id) ? p.id : '';
+    if (!src && !id) return null;
+    const num = (v, d, a, b) => { v = +v; return isFinite(v) ? clamp(Math.round(v * 10) / 10, a, b) : d; };
+    return {
+      src, id,
+      x: num(p.x, 200, -150, 550), y: num(p.y, 130, -150, 450), w: num(p.w, 150, 20, 600), ar: num(p.ar, 1, 0.2, 5),
+      layer: p.layer === 'front' ? 'front' : 'back', shape: pick(p.shape, PHOTO_SHAPES, 'none')
+    };
+  }
+  const squarePhoto = p => p.shape === 'circle' || p.shape === 'heart';
+  const photoH = p => squarePhoto(p) ? p.w : p.w * p.ar;
+
   function normalize(o) {
     o = o && typeof o === 'object' ? o : {};
     const d = DEFAULTS, inc = parseInt(o.incense, 10);
@@ -110,7 +140,8 @@
       incense: inc >= 0 && inc <= 3 ? inc : d.incense,
       strokes: cleanStrokes(o.strokes),
       drawId: typeof o.drawId === 'string' && /^[A-Za-z0-9_-]{20,40}\.png$/.test(o.drawId) ? o.drawId : '',
-      flames: cleanFlames(o.flames)
+      flames: cleanFlames(o.flames),
+      photo: cleanPhoto(o.photo)
     };
   }
   const defaults = () => normalize(DEFAULTS);
@@ -329,20 +360,29 @@
     bucket: 'krathong-drawings'
   };
   const drawUrl = id => `${CLOUD.url}/storage/v1/object/public/${CLOUD.bucket}/${id}`;
-  async function uploadDrawing(blob) {
+  async function uploadFile(bucket, blob, ext, type) {
     const bytes = crypto.getRandomValues(new Uint8Array(18));
-    const id = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_') + '.png';
+    const id = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_') + '.' + ext;
     const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timer = setTimeout(() => ctrl && ctrl.abort(), 20000);
+    const timer = setTimeout(() => ctrl && ctrl.abort(), 25000);
     try {
-      const res = await fetch(`${CLOUD.url}/storage/v1/object/${CLOUD.bucket}/${id}`, {
+      const res = await fetch(`${CLOUD.url}/storage/v1/object/${bucket}/${id}`, {
         method: 'POST',
-        headers: { apikey: CLOUD.key, Authorization: 'Bearer ' + CLOUD.key, 'Content-Type': 'image/png', 'x-upsert': 'false', 'cache-control': '31536000' },
+        headers: { apikey: CLOUD.key, Authorization: 'Bearer ' + CLOUD.key, 'Content-Type': type, 'x-upsert': 'false', 'cache-control': '31536000' },
         body: blob, signal: ctrl ? ctrl.signal : undefined
       });
       if (!res.ok) throw new Error('upload failed: ' + res.status);
       return id;
     } finally { clearTimeout(timer); }
+  }
+  const uploadDrawing = blob => uploadFile(CLOUD.bucket, blob, 'png', 'image/png');
+  const PHOTO_BUCKET = 'krathong-photos';
+  const photoUrl = id => `${CLOUD.url}/storage/v1/object/public/${PHOTO_BUCKET}/${id}`;
+  const photoSrc = p => p ? (p.src || (p.id ? photoUrl(p.id) : '')) : '';
+  async function uploadPhoto(p) {
+    const blob = await (await fetch(p.src)).blob();
+    const png = p.src.startsWith('data:image/png');
+    return uploadFile(PHOTO_BUCKET, blob, png ? 'png' : 'jpg', png ? 'image/png' : 'image/jpeg');
   }
 
   // ---------- links ----------
@@ -556,11 +596,11 @@
     } finally { clearTimeout(timer); }
   }
   function fromRow(r) {
-    const o = Object.assign({}, r.look || {}, { mode: r.mode, name: r.name, msg: r.msg, flames: r.flames, drawId: r.draw_id || '' });
+    const o = Object.assign({}, r.look || {}, { mode: r.mode, name: r.name, msg: r.msg, flames: r.flames, drawId: r.draw_id || '', photo: r.photo || null });
     if (r.strokes) o.strokes = decodeStrokes(r.strokes);
     return normalize(o);
   }
-  const ROW_FIELDS = 'id,created_at,name,msg,mode,look,strokes,draw_id,flames';
+  const ROW_FIELDS = 'id,created_at,name,msg,mode,look,strokes,draw_id,flames,photo';
   // Newest krathongs (optionally only those after a given time), oldest first.
   async function fetchRiver(since, limit = 60) {
     const q = `krathongs?select=${ROW_FIELDS}&order=created_at.desc&limit=${limit}` + (since ? `&created_at=gt.${encodeURIComponent(since)}` : '');
@@ -588,45 +628,79 @@
         row.draw_id = await uploadDrawing(blob);
       }
     }
+    if (c.photo) {
+      const p = c.photo, id = p.id || await uploadPhoto(p);
+      row.photo = { id, x: p.x, y: p.y, w: p.w, ar: p.ar, layer: p.layer, shape: p.shape };
+    }
     const res = await api('krathongs', { method: 'POST', headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' }, body: JSON.stringify(row) });
     return (await res.json())[0];
   }
 
+  function loadImg(src, cors) {
+    return new Promise(res => {
+      if (!src) return res(null);
+      const img = new Image();
+      if (cors) img.crossOrigin = 'anonymous';
+      img.onload = () => res(img); img.onerror = () => res(null);
+      img.src = src;
+    });
+  }
+  function photoPath(g, shape, x, y, w, h) {
+    g.beginPath();
+    if (shape === 'circle') g.arc(x + w / 2, y + h / 2, w / 2, 0, Math.PI * 2);
+    else if (shape === 'heart') {
+      g.moveTo(x + w / 2, y + h * 0.92);
+      g.bezierCurveTo(x - w * 0.15, y + h * 0.5, x + w * 0.1, y - h * 0.08, x + w / 2, y + h * 0.26);
+      g.bezierCurveTo(x + w * 0.9, y - h * 0.08, x + w * 1.15, y + h * 0.5, x + w / 2, y + h * 0.92);
+    } else if (shape === 'round') {
+      const r = Math.min(w, h) * 0.12;
+      g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r);
+    } else g.rect(x, y, w, h);
+    g.closePath();
+  }
+  // Draw the photo on a canvas whose size is k × the 400×300 view.
+  function drawPhoto(g, img, p, k) {
+    if (!img || !p) return;
+    const w = p.w * k, h = photoH(p) * k, x = p.x * k - w / 2, y = p.y * k - h / 2;
+    let sx = 0, sy = 0, sw = img.naturalWidth || img.width, sh = img.naturalHeight || img.height;
+    if (squarePhoto(p)) { const side = Math.min(sw, sh); sx = (sw - side) / 2; sy = (sh - side) / 2; sw = sh = side; }
+    g.save(); photoPath(g, p.shape, x, y, w, h); g.clip();
+    g.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+    g.restore();
+  }
+
   // A small picture of any krathong (for drawing many of them on the river).
   const SPRITE_W = 240, SPRITE_H = 180;
-  function makeSprite(c) {
-    return new Promise(resolve => {
-      const cv = document.createElement('canvas');
-      cv.width = SPRITE_W; cv.height = SPRITE_H;
-      const g = cv.getContext('2d');
-      const done = flames => resolve({ canvas: cv, flames });
-      if (c.mode === 'create') {
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        const flames = render(svg, c);
-        const src = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VIEW_W} ${VIEW_H}" width="${SPRITE_W}" height="${SPRITE_H}">` +
-          `<style>.inc-tip{fill:#ff6a2a}.inc-smoke{display:none}</style>${svg.innerHTML}</svg>`;
-        const img = new Image();
-        img.onload = () => { g.drawImage(img, 0, 0, SPRITE_W, SPRITE_H); done(flames); };
-        img.onerror = () => done(flames);
-        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(src);
-        return;
-      }
-      const flames = flamesFor(c);
+  async function makeSprite(c) {
+    const cv = document.createElement('canvas');
+    cv.width = SPRITE_W; cv.height = SPRITE_H;
+    const g = cv.getContext('2d'), k = SPRITE_W / VIEW_W;
+    const photo = c.photo ? await loadImg(photoSrc(c.photo), !c.photo.src) : null;
+    if (c.photo && c.photo.layer === 'back') drawPhoto(g, photo, c.photo, k);
+    let flames;
+    if (c.mode === 'create') {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      flames = render(svg, c);
+      const src = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VIEW_W} ${VIEW_H}" width="${SPRITE_W}" height="${SPRITE_H}">` +
+        `<style>.inc-tip{fill:#ff6a2a}.inc-smoke{display:none}</style>${svg.innerHTML}</svg>`;
+      const img = await loadImg('data:image/svg+xml;charset=utf-8,' + encodeURIComponent(src));
+      if (img) g.drawImage(img, 0, 0, SPRITE_W, SPRITE_H);
+    } else {
+      flames = flamesFor(c);
       if (c.strokes.length) {
         g.save(); g.scale(SPRITE_W / PAD_W, SPRITE_H / PAD_H); paintStrokes(g, c.strokes, true); g.restore();
-        done(flames);
       } else if (c.drawId) {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => { g.drawImage(img, 0, 0, SPRITE_W, SPRITE_H); done(flames); };
-        img.onerror = () => done(flames);
-        img.src = drawUrl(c.drawId);
-      } else done(flames);
-    });
+        const img = await loadImg(drawUrl(c.drawId), true);
+        if (img) g.drawImage(img, 0, 0, SPRITE_W, SPRITE_H);
+      }
+    }
+    if (c.photo && c.photo.layer === 'front') drawPhoto(g, photo, c.photo, k);
+    return { canvas: cv, flames };
   }
 
   window.Krathong = {
     fromRow, fetchRiver, countSince, release, makeSprite, SPRITE_W, SPRITE_H,
+    PHOTO_SHAPES, PHOTO_LAYERS, photoSrc, photoH, squarePhoto,
     BASES, LEAVES, LEAF_COLORS, FLOWERS, CENTERS, CANDLES, INKS, MIN_W, MAX_W, floodFill,
     PAD_W, PAD_H, VIEW_W, VIEW_H, WL, MAX_NAME, MAX_MSG, MAX_FLAMES,
     defaults, normalize, render, flamesFor, strokesBox,

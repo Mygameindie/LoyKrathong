@@ -38,6 +38,18 @@
   function copyReflection() {
     if (cfg.mode === 'draw') { padRG.clearRect(0, 0, K.PAD_W, K.PAD_H); padRG.drawImage(pad, 0, 0); }
     else svgR.innerHTML = svg.innerHTML;
+    showPhoto($('kPhotoR'), cfg.photo);
+  }
+  // The maker's photo: an <img> placed in the 400×300 view, behind or in front of the krathong.
+  function showPhoto(el, p) {
+    const src = K.photoSrc(p);
+    el.classList.toggle('hidden', !src);
+    if (!src) { el.removeAttribute('src'); return; }
+    if (el.getAttribute('src') !== src) { if (!p.src) el.crossOrigin = 'anonymous'; el.src = src; }
+    el.className = `k-photo ${p.layer} ${p.shape}`;
+    el.style.left = (p.x / K.VIEW_W * 100) + '%';
+    el.style.top = (p.y / K.VIEW_H * 100) + '%';
+    el.style.width = (p.w / K.VIEW_W * 100) + '%';
   }
   function buildFlames(spots) {
     const wasLit = mode === 'build';
@@ -58,6 +70,7 @@
     let spots;
     if (draw) { paintPad(); spots = K.flamesFor(cfg); }
     else spots = K.render(svg, cfg);
+    showPhoto($('kPhoto'), cfg.photo);
     if (mode === 'float') copyReflection();
     buildFlames(spots);
     applyTitle();
@@ -528,6 +541,7 @@
     pad, padG,
     setKrathong(c) { cfg = K.normalize(c); render(); showLetter(); },
     refreshFlames,
+    setPhoto(p) { cfg.photo = K.normalize({ photo: p }).photo; showPhoto($('kPhoto'), cfg.photo); },
     relayout() { requestAnimationFrame(layout); },
     ctx,
     enterBuild() {
@@ -557,7 +571,7 @@
       document.body.classList.add('mode-float');
       wishIn.value = '';
       render(); showLetter();
-      setStep('light');
+      setStep(flames.length ? 'light' : 'wish');     // a photo-only krathong has no candle to light
       $('backBtn').classList.toggle('hidden', !opts.fromBuilder);
       if (!opts.keepOverlay && !opts.release) {
         $('startTitle').textContent = cfg.name ? `A krathong for ${cfg.name}!` : 'A krathong for you!';
